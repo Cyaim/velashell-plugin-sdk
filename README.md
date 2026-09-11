@@ -1,14 +1,20 @@
 # VelaShell 插件契约 SDK
 
-[VelaShell](https://github.com/joesdu/VelaShell) 插件的**契约层**:插件与宿主唯一共享的那批类型。
+[VelaShell](https://github.com/joesdu/VelaShell) 插件的**契约层**:插件与宿主唯一共享的那批类型,
+以及插件工程引用的那一个构建支持包。
 
 | 包 | 内容 |
 | --- | --- |
 | [`VelaShell.PluginSdk`](https://www.nuget.org/packages/VelaShell.PluginSdk) | 契约程序集:插件入口、`IPluginContext` 与全部能力接口、DTO、`plugin.json` 清单模型、`.vpx` 容器格式、宿主注册表 |
 | [`VelaShell.PluginSdk.Testing`](https://www.nuget.org/packages/VelaShell.PluginSdk.Testing) | 测试替身:`TestPluginContext` 与各能力的内存实现,不起宿主也能测插件 |
+| [`VelaShell.PluginSdk.Build`](https://www.nuget.org/packages/VelaShell.PluginSdk.Build) | 插件工程**只需引用这一个包**:MSBuild targets + 随包分发的打包器(`src/VelaShell.PluginSdk.Packer`,不单独发包)+ 契约程序集 + Avalonia 版本锁 |
 
-> **插件作者一般不直接引用这两个包。** 写插件只需要引用 `VelaShell.PluginSdk.Build`,
-> 契约程序集会随它传递进来 —— 见[开发指南](https://github.com/VelaShellLabs/velashell-docs/blob/main/zh/templates/dev-guide.md)。
+> **插件作者只引用 `VelaShell.PluginSdk.Build`**,契约程序集会随它传递进来 ——
+> 见[开发指南](https://github.com/VelaShellLabs/velashell-docs/blob/main/zh/templates/dev-guide.md)。
+
+三个包**同版本、同一次发布**。`.Build` 于 2026-09-11 从 `velashell-plugin-cli` 搬到这里,
+换来的正是这一点:它引用契约走 `ProjectReference`,发给插件作者的那份契约就是本仓库这一版,
+「.Build 引用的是哪一版契约」这个旋钮连同它漂移的可能一并消失。
 
 ## 插件生态的仓库分布
 
@@ -16,8 +22,8 @@
 
 | 仓库 | 产出 | 什么时候发 |
 | --- | --- | --- |
-| **本仓库** `velashell-plugin-sdk` | `VelaShell.PluginSdk`、`.Testing` | 契约有增删改时 |
-| [`velashell-plugin-cli`](https://github.com/VelaShellLabs/velashell-plugin-cli) | `VelaShell.Plugin.Cli`(`vela-plugin`)、`VelaShell.PluginSdk.Build` | 工具/打包/MSBuild 逻辑变化时 |
+| **本仓库** `velashell-plugin-sdk` | `VelaShell.PluginSdk`、`.Testing`、`.Build` | 契约有增删改时,或 MSBuild/打包逻辑变化时 |
+| [`velashell-plugin-cli`](https://github.com/VelaShellLabs/velashell-plugin-cli) | `VelaShell.Plugin.Cli`(`vela-plugin`) | 命令行工具本身变化时 |
 | [`velashell-plugin-templates`](https://github.com/VelaShellLabs/velashell-plugin-templates) | `VelaShell.Plugin.Templates` | 模板内容变化,或要把新建工程指到新版 Build 包时 |
 
 另外三个相关仓库:[joesdu/VelaShell](https://github.com/joesdu/VelaShell)(宿主主程序)、
@@ -25,15 +31,19 @@
 [VelaShellLabs/velashell-docs](https://github.com/VelaShellLabs/velashell-docs)(**全部文档**,
 2026-08-30 起各仓库的 `docs/` 都搬到了那里)。
 
-依赖方向是单向的,没有环:
+依赖方向是单向的,没有环 —— **本仓库无上游**:
 
 ```
-velashell-plugin-sdk                  ← 本仓库,无上游
+velashell-plugin-sdk                  ← 本仓库(契约 + .Build + 打包器)
         ↓ NuGet: VelaShell.PluginSdk
-velashell-plugin-cli                  vela-plugin + VelaShell.PluginSdk.Build
+velashell-plugin-cli                  vela-plugin(面向人的完整工具)
         ↓ NuGet: VelaShell.PluginSdk.Build
 velashell-plugin-templates            dotnet new velaplugin / velaplugin-ui
 ```
+
+插件工程出包用的打包器是本仓库自带的 `VelaShell.PluginSdk.Packer`,**不是** `vela-plugin` ——
+`.vpx` 的定义(`VpxContainer`)与清单规则本来就在 `VelaShell.PluginSdk` 里,`vela-plugin`
+也只是它的另一个调用方。两边包格式一致由类型保证,不靠跨仓库的版本对齐。
 
 所以:**本仓库发 1.6.0,下游一个都不用动**。它们只在想吃到新契约时才把自己引用的
 `VelaShell.PluginSdk` 版本抬上来。
@@ -54,27 +64,47 @@ velashell-plugin-templates            dotnet new velaplugin / velaplugin-ui
 
    | 谁核对 | 在哪 |
    | --- | --- |
-   | 宿主 | `src/Directory.Build.targets` 的 `VerifyAvaloniaMatchesSdk` |
-   | `VelaShell.PluginSdk.Build` | cli 仓库的 `VerifyAvaloniaVersionPin` |
+   | 宿主 | 宿主仓库 `src/Directory.Build.targets` 的 `VerifyAvaloniaMatchesSdk` |
+   | `VelaShell.PluginSdk.Build` | 本仓库 `src/VelaShell.PluginSdk.Build` 的 `VerifyAvaloniaVersionPin`(同仓库,直接读属性,不绕包) |
 
    改 `VelaAvaloniaVersion` = 改整个插件生态的 Avalonia 版本,必须与宿主同一波发布,
-   发完之后让 cli 仓库抬一次它引用的 SDK 版本 —— 否则那道核对会红。
+   并且在**同一个提交里**把 `.Build` 的两处副本(csproj 上那条精确区间 `[x.y.z]`、
+   `build/VelaShell.PluginSdk.Build.props` 里的同名默认值)一起改掉 —— 否则 `VELA1000` /
+   `VELA1006` 会在构建期红。
 
 ## 在本仓库里开发
 
 ```bash
 dotnet build VelaShell.PluginSdk.slnx
 dotnet test  VelaShell.PluginSdk.slnx -c Debug
+
+# 端到端冒烟:拿刚打出的包当插件作者走一遍(改了 .Build 的 targets 或打包器版本后必跑)
+dotnet pack src/VelaShell.PluginSdk/VelaShell.PluginSdk.csproj             -c Release -o artifacts/nuget
+dotnet pack src/VelaShell.PluginSdk.Build/VelaShell.PluginSdk.Build.csproj -c Release -o artifacts/nuget
+pwsh scripts/Invoke-Smoke.ps1 -Feed ./artifacts/nuget -Version 2.0.2
 ```
 
 `-c Debug` 不是随口一说:Release 会打开强名称签名,而测试程序集不是签名友元,
 Release 下 `dotnet test` 编不过。签名密钥不入库,CI 从 `STRONG_NAME_KEY` 机密还原。
+本地想打 Release 包又没有密钥时加 `-p:SignAssembly=false`。
+
+冒烟的夹具在 [`tests/smoke/`](tests/smoke/):一个手写的最小插件工程,与 `velaplugin-ui`
+模板同形。它刻意带两个空的 `Directory.Build.props`/`.targets` 来切断向上查找 ——
+**插件工程是仓库外环境,仓库内的构建约定一条也吃不到**,这个冒烟的一半价值就在这里;
+另一半是它跑的打包器来自 `.Build` 包的 `tools/`,于是「targets 调的命令面与打包器对不对得上」
+这件跨仓库的事也在这里显形。
+
+打包器在 `src/VelaShell.PluginSdk.Packer`(三条命令:`validate` / `pack` / `info`)。
+它**刻意不是 MSBuild 任务**:VS 的 MSBuild 跑在 .NET Framework 上,而本仓库是 net11.0,
+做成 `<UsingTask>` 的话插件作者在 VS 里一按生成就会加载失败(清单校验是 `AfterTargets="Build"`
+的,每次生成都跑)。详见该工程的 README。
 
 ## 发版
 
 ```powershell
 pwsh scripts/Set-Version.ps1 1.6.0     # 落版本号(4 处),连同功能改动合进 main
                                         # 再在 GitHub 上发 Release,标签 v1.6.0
+                                        # 一次发出三个包:PluginSdk / .Testing / .Build
 ```
 
 破坏性变更要先手工把 `VelaPluginApi.Level` +1 —— 脚本会核对但不代改,因为「契约破没破」

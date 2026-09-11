@@ -19,11 +19,14 @@
     <File Path="docs/release-process.md" />
   </Folder>
   <Folder Name="/scripts/">
+    <File Path="scripts/Invoke-Smoke.ps1" />
     <File Path="scripts/Set-Version.ps1" />
   </Folder>
   <Folder Name="/src/">
     <File Path="src/Directory.Build.props" />
     <Project Path="src/VelaShell.PluginSdk/VelaShell.PluginSdk.csproj" />
+    <Project Path="src/VelaShell.PluginSdk.Build/VelaShell.PluginSdk.Build.csproj" />
+    <Project Path="src/VelaShell.PluginSdk.Packer/VelaShell.PluginSdk.Packer.csproj" />
     <Project Path="src/VelaShell.PluginSdk.Testing/VelaShell.PluginSdk.Testing.csproj" />
   </Folder>
   <Folder Name="/tests/">
@@ -32,5 +35,15 @@
     <File Path="tests/Directory.Packages.props" />
     <File Path="tests/velashell.runsettings" />
     <Project Path="tests/VelaShell.PluginSdk.Tests/VelaShell.PluginSdk.Tests.csproj" />
+  </Folder>
+  <!-- 冒烟夹具刻意**不作为 Project 加进解决方案**:它引用的是刚打出来的
+       VelaShell.PluginSdk.Build 包,只有 scripts/Invoke-Smoke.ps1 把它复制到临时目录、
+       填好版本号、指向本地源之后才还原得动。加进来只会让 `dotnet build` 整个解决方案时
+       多一条谁也修不了的还原失败。 -->
+  <Folder Name="/tests/smoke/">
+    <File Path="tests/smoke/Directory.Build.props" />
+    <File Path="tests/smoke/Directory.Build.targets" />
+    <File Path="tests/smoke/plugin.json" />
+    <File Path="tests/smoke/Smoke.csproj" />
   </Folder>
 </Solution>

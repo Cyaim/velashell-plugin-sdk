@@ -1,4 +1,11 @@
-# 契约 SDK 的日常验证。发布不走这里(见 release.yml),但**发布会做的事这里基本都做一遍**。
+# 契约 SDK 与插件构建支持包的日常验证。发布不走这里(见 release.yml),
+# 但**发布会做的事这里基本都做一遍**。
+#
+# 本仓库产出三个包,共用一个版本号:
+#      VelaShell.PluginSdk           契约程序集
+#      VelaShell.PluginSdk.Testing   测试替身
+#      VelaShell.PluginSdk.Build     插件工程只需引用的那一个包
+#                                    (2026-09-11 从 velashell-plugin-cli 搬来)
 #
 # 与 release.yml 的差别只有三处:不推 nuget.org、不上传产物到 Release、
 # 以及 fork PR 拿不到强名称密钥时关掉签名继续跑。
@@ -91,9 +98,15 @@ jobs:
         run: |
           $version = '${{ steps.version.outputs.version }}'
           New-Item -ItemType Directory -Force artifacts/nuget | Out-Null
+          # VelaShell.PluginSdk.Build 也在这一批里:它与契约包同仓库、同版本、同一次发布
+          # (2026-09-11 从 velashell-plugin-cli 搬过来)。顺序无所谓 —— 它对契约包和打包器
+          # 都是 ProjectReference,dotnet pack 会自己先把那两个工程建出来。
+          # (VelaShell.PluginSdk.Packer 不在这个列表里:它 IsPackable=false,只以构建产物的
+          #  形式躺在 .Build 包的 tools/ 下。)
           $projects = @(
             'src/VelaShell.PluginSdk/VelaShell.PluginSdk.csproj',
-            'src/VelaShell.PluginSdk.Testing/VelaShell.PluginSdk.Testing.csproj'
+            'src/VelaShell.PluginSdk.Testing/VelaShell.PluginSdk.Testing.csproj',
+            'src/VelaShell.PluginSdk.Build/VelaShell.PluginSdk.Build.csproj'
           )
           foreach ($project in $projects) {
             dotnet pack $project -c Release -o artifacts/nuget -p:VelaSdkVersion=$version --nologo $env:VELA_SIGN_ARGS
@@ -101,11 +114,11 @@ jobs:
           }
           Get-ChildItem artifacts/nuget | Select-Object -ExpandProperty Name
 
-      # ── 拆库之后新增的一步 ────────────────────────────────────────────────
-      # 本仓库是 Avalonia 版本锁的**权威**,而这个事实只通过包里那一个 buildTransitive
-      # props 文件传达给下游(宿主的 VerifyAvaloniaMatchesSdk、cli 仓库的
-      # VerifyAvaloniaVersionPin 都读它)。单仓库时代那两处核对是直接读文件的,
-      # 漏打进包也没人发现;现在包就是唯一通道,所以拆完包核对一遍它真的在里面。
+      # 本仓库是 Avalonia 版本锁的**权威**,而这个事实传给**宿主**的唯一通道就是包里那一个
+      # buildTransitive props 文件(宿主的 VerifyAvaloniaMatchesSdk 读它)。它没打进包也不会
+      # 让 pack 失败,所以拆开核对一遍。
+      # (.Build 现在同仓库,直接读 $(VelaAvaloniaVersion),不走这条通道 —— 见其
+      #  VerifyAvaloniaVersionPin。所以这一步守的是宿主那一侧。)
       - name: Verify the pin props shipped in the package
         shell: pwsh
         run: |
@@ -121,7 +134,7 @@ jobs:
           Expand-Archive -Path $zip -DestinationPath (Join-Path $work 'x')
           $props = Join-Path $work 'x/buildTransitive/VelaShell.PluginSdk.props'
           if (-not (Test-Path $props)) {
-            throw "buildTransitive/VelaShell.PluginSdk.props is missing from the package. Downstream repos read the pinned Avalonia version from it; without it the host and VelaShell.PluginSdk.Build lose their only cross-repo consistency check."
+            throw "buildTransitive/VelaShell.PluginSdk.props is missing from the package. The VelaShell host reads the pinned Avalonia version from it; without it the host loses its only consistency check against this SDK."
           }
           $text = Get-Content -Raw $props
           $expected = [regex]::Match((Get-Content -Raw Directory.Build.props), '<VelaAvaloniaVersion>([^<]+)</VelaAvaloniaVersion>').Groups[1].Value
@@ -131,6 +144,24 @@ jobs:
           }
           Write-Host "Pinned Avalonia = $shipped, SDK package version = $version"
           Write-Host $text
+
+      # 端到端冒烟:拿刚打出的包,站在插件作者的位置上走一遍
+      # (最小插件工程 → 还原 → 构建 → 出 .vpx → 读回容器 → 查共享程序集有没有漏)。
+      # 夹具在 tests/smoke/,细节见 scripts/Invoke-Smoke.ps1 的注释。
+      #
+      # 这一步不是形式,它挡两类东西:
+      #  ① 插件工程是**仓库外环境**,仓库内的 Directory.Build.props 一条也吃不到 ——
+      #     历史上两个最难查的坑(CA2252 全线报错、AXAML 编译器到不了插件工程)
+      #     都只有在这个前提下才会显形;
+      #  ② 打包器(VelaShell.PluginSdk.Packer)真的进了包、targets 真的调得动它 ——
+      #     "随包分发、无需全局工具"是本包对插件作者的承诺,而漏打或调错了只有真跑一遍
+      #     才看得见(插件作者那边的现象是一句 VELA1003 或构建到一半 Exec 失败)。
+      #     改 targets 或改打包器命令面之后必跑。
+      - name: Smoke test (plugin project -> build -> .vpx)
+        shell: pwsh
+        run: |
+          & ./scripts/Invoke-Smoke.ps1 -Feed ./artifacts/nuget -Version '${{ steps.version.outputs.version }}'
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
       - uses: actions/upload-artifact@v7
         with:
