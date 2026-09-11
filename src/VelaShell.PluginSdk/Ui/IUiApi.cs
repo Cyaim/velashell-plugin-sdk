@@ -43,6 +43,47 @@ public sealed record PanelOptions
     /// <summary>面板标题(标签页文字 / 窗口标题)。</summary>
     public required string Title { get; init; }
 
+    /// <summary>
+    /// 标签页上的图标,SVG 路径数据;留空则宿主画一个通用的插件图标。窗口模式忽略。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 与 <c>ProtocolDescriptor.IconPathData</c> / <c>WorkspaceDescriptor.IconPathData</c>
+    /// 是同一套口径,只是那两个说的是**会话**标签,这个说的是**面板**标签。三者都存在,
+    /// 是因为一个插件的这三种标签可能各画各的(比如同一个插件既开工作台又开设置面板)。
+    /// </para>
+    /// <para>
+    /// 传路径而不是资源键,与 <see cref="PanelTitleAction.IconPathData" /> 同一个理由:
+    /// 隔离进程里没有宿主的 <c>Icon.*</c> 资源字典。同理宿主也不该维护一张
+    /// 「插件 id → 图标」的对照表 —— 那种表第三方插件永远进不去。
+    /// </para>
+    /// <para>
+    /// 默认按 lucide 的口径解读:<b>24×24 视框、描边风格</b>,宿主用 2/24 的画笔描它。
+    /// 品牌 logo 那类实心图形走 <see cref="IconViewBoxSize" /> 与 <see cref="IconIsFilled" />。
+    /// </para>
+    /// <para>
+    /// ⚠️ 这是**一条会被画到屏幕上的字符串**。宿主解析失败时当作没给,画通用图标 ——
+    /// 一段畸形路径不该把标签条顶掉。
+    /// </para>
+    /// <para>可用版本:TBD(发版时替换为实际 SDK 版本)。</para>
+    /// </remarks>
+    public string? IconPathData { get; init; }
+
+    /// <summary>
+    /// <see cref="IconPathData" /> 的原生视框边长,默认 24(lucide)。
+    /// 品牌 logo 导出的视框常是 1024 之类,不报出来宿主会按 24 缩放,把它放大四十多倍。
+    /// <para>可用版本:TBD(发版时替换为实际 SDK 版本)。</para>
+    /// </summary>
+    public double IconViewBoxSize { get; init; } = 24d;
+
+    /// <summary>
+    /// <see cref="IconPathData" /> 是否为实心填充图形(品牌 logo 多半是)。
+    /// 默认 <see langword="false" />,即按描边渲染 —— 用描边去画一个实心图形,
+    /// 得到的是它的轮廓线,一团糊。
+    /// <para>可用版本:TBD(发版时替换为实际 SDK 版本)。</para>
+    /// </summary>
+    public bool IconIsFilled { get; init; }
+
     /// <summary>呈现方式,默认停靠文档。</summary>
     public PanelDisplayMode DisplayMode { get; init; } = PanelDisplayMode.Document;
 
