@@ -309,7 +309,7 @@ public sealed record ProtocolDescriptor
     /// <summary>
     /// 会话标签页上的图标;留空则宿主画一个通用的插件图标。
     /// 形态与取舍见 <see cref="PluginIcon" />(标签页图标三处共用同一个类型)。
-    /// <para>可用版本:TBD(发版时替换为实际 SDK 版本)。</para>
+    /// <para>可用版本:2.0.4。</para>
     /// </summary>
     public PluginIcon? Icon { get; init; }
 

@@ -22,7 +22,7 @@ namespace VelaShell.PluginSdk;
 /// ⚠️ <see cref="PathData" /> 是**一条会被画到屏幕上的字符串**。宿主解析失败时当作没给、
 /// 画通用插件图标 —— 一段畸形路径不该把标签条顶掉。
 /// </para>
-/// <para>可用版本:TBD(发版时替换为实际 SDK 版本)。</para>
+/// <para>可用版本:2.0.4。</para>
 /// </remarks>
 /// <example>
 /// lucide 那套描边字形直接抄路径即可(视框恒为 24):
