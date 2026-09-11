@@ -307,41 +307,11 @@ public sealed record ProtocolDescriptor
     public required string DisplayName { get; init; }
 
     /// <summary>
-    /// 会话标签页上的图标,SVG 路径数据;留空则宿主画一个通用的插件图标。
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// 传路径而不是资源键,与 <c>PanelTitleAction.IconPathData</c> 同一个理由:
-    /// 隔离进程里没有宿主的 <c>Icon.*</c> 资源字典。同理宿主也不该维护一张
-    /// 「插件 id → 图标」的对照表 —— 那种表第三方插件永远进不去。
-    /// </para>
-    /// <para>
-    /// 默认按 lucide 的口径解读:<b>24×24 视框、描边风格</b>,宿主用 2/24 的画笔描它,
-    /// 于是插件的图标与宿主自己那套在任何字号下粗细一致。品牌 logo 那类实心图形
-    /// 走 <see cref="IconViewBoxSize" /> 与 <see cref="IconIsFilled" />。
-    /// </para>
-    /// <para>
-    /// ⚠️ 这是**一条会被画到屏幕上的字符串**。宿主解析失败时当作没给,画通用图标 ——
-    /// 一段畸形路径不该把标签条顶掉。
-    /// </para>
-    /// <para>可用版本:TBD(发版时替换为实际 SDK 版本)。</para>
-    /// </remarks>
-    public string? IconPathData { get; init; }
-
-    /// <summary>
-    /// <see cref="IconPathData" /> 的原生视框边长,默认 24(lucide)。
-    /// 品牌 logo 导出的视框常是 1024 之类,不报出来宿主会按 24 缩放,把它放大四十多倍。
+    /// 会话标签页上的图标;留空则宿主画一个通用的插件图标。
+    /// 形态与取舍见 <see cref="PluginIcon" />(标签页图标三处共用同一个类型)。
     /// <para>可用版本:TBD(发版时替换为实际 SDK 版本)。</para>
     /// </summary>
-    public double IconViewBoxSize { get; init; } = 24d;
-
-    /// <summary>
-    /// <see cref="IconPathData" /> 是否为实心填充图形(品牌 logo 多半是)。
-    /// 默认 <see langword="false" />,即按描边渲染 —— 用描边去画一个实心 logo,
-    /// 得到的是它的轮廓线,一团糊。
-    /// <para>可用版本:TBD(发版时替换为实际 SDK 版本)。</para>
-    /// </summary>
-    public bool IconIsFilled { get; init; }
+    public PluginIcon? Icon { get; init; }
 
     /// <summary>新建配置时的默认端口。</summary>
     public int DefaultPort { get; init; } = 22;
