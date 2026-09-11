@@ -4,7 +4,9 @@
     把 SDK 版本号写进本仓库里所有需要它的地方。
 
 .DESCRIPTION
-    拆库之后本仓库只管**契约包**的版本号(VelaShell.PluginSdk / .Testing),落点缩到四处:
+    本仓库这一个版本号管三个同时发布的包(VelaShell.PluginSdk / .Testing / .Build ——
+    .Build 于 2026-09-11 从 velashell-plugin-cli 搬来,见 Directory.Build.props 的注释)。
+    落点四处:
 
       Directory.Build.props            <VelaSdkVersion>          —— 包版本的默认值
       src/…/VelaPluginApi.cs           SdkVersion 常量           —— 宿主写进 host.json 的值,
@@ -18,12 +20,17 @@
     docs 那两处不影响功能,但它们是给人照抄的 —— 2026-08-30 全部文档搬到
     VelaShellLabs/velashell-docs 之后,它们不在本仓库的 checkout 里,所以找不到就跳过。
 
-    **不在本仓库的落点**(2026-08-27 拆库起,各自由所在仓库的同名脚本管):
+    **不在本仓库的落点**(各自由所在仓库的同名脚本管):
       · dotnet new 模板的 sdkVersion 默认值,以及 velashell-docs 里
         zh|en/templates/dev-guide.md 的 PackageReference 片段 …… velashell-plugin-templates
       · velashell-docs 里 zh|en/cli/cli.md 的版本横幅 ……… velashell-plugin-cli
-    那几处跟的是 VelaShell.PluginSdk.Build / VelaShell.Plugin.Cli 的版本,与本仓库无关 ——
-    这正是拆库要的效果:SDK 发 1.6.0 不必惊动模板和 CLI。
+    前者跟的是 VelaShell.PluginSdk.Build 的版本 —— 那**现在就是本仓库的版本号**,
+    所以本仓库发完版之后,想让 `dotnet new velaplugin` 生成的工程指过来,要去模板仓库
+    抬一次 VelaBuildPackageVersion 再发一版模板(不做也不会坏:新建的工程继续引用上一版
+    .Build 包,那是完全可用的)。后者跟的是 vela-plugin 的版本,与本仓库无关。
+
+    打包器(src/VelaShell.PluginSdk.Packer)没有自己的版本号:它 IsPackable=false,
+    只以构建产物的形式随 .Build 的 tools/ 分发,跟着本仓库这一个版本号走。
 
     发版流水线在解析出 Release 标签之后**第一件事**也会跑本脚本
     (见 .github/workflows/release.yml),因此产物永远与标签一致,与仓库里当时提交了什么

@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>VelaShell.PluginSdk.Packer</RootNamespace>
+    <AssemblyName>VelaShell.PluginSdk.Packer</AssemblyName>
+
+    <!--
+      **本工程不发 NuGet 包。** 它只以构建产物的形式被 VelaShell.PluginSdk.Build 收进那个包的
+      tools/ 目录,插件工程 `dotnet build -t:PackVpx` 调的就是它(见 .Build 的 build/*.targets)。
+
+      为什么是一个**独立进程**而不是 MSBuild 任务:VS 的 MSBuild 跑在 .NET Framework 上,
+      而本仓库是 net11.0 —— 做成 <UsingTask> 的话,插件作者在 VS 里一按生成就会因为加载不了
+      任务程序集而失败(而 VelaValidateManifest 是 AfterTargets="Build" 的,每次生成都跑)。
+      `dotnet exec` 一个独立进程则与调用方的 MSBuild 是哪种运行时完全无关。
+
+      为什么在**本仓库**而不是 velashell-plugin-cli:打包器需要的东西(VpxContainer 容器格式、
+      PluginManifestReader 清单规则)本来就在 VelaShell.PluginSdk 里,它们才是 .vpx 的定义。
+      放在这里,.Build 发出去的打包器与它发出去的契约天然是同一版,不需要任何跨仓库的版本对齐。
+      vela-plugin(velashell-plugin-cli)保留自己面向人的 pack/validate/sign/info —— 两边都走
+      同一个 VpxContainer,一致性由类型保证,不靠版本号约定。
+    -->
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- 没有对外的程序集面,不签名、不出符号包(src/Directory.Build.props 给 src/ 下所有
+         工程开了这两项,那是给要发布的契约包用的)。未签名程序集引用已签名的 SDK 是
+         允许的方向,反过来才不行。 -->
+    <SignAssembly>false</SignAssembly>
+    <IncludeSymbols>false</IncludeSymbols>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\VelaShell.PluginSdk\VelaShell.PluginSdk.csproj" />
+  </ItemGroup>
+
+</Project>

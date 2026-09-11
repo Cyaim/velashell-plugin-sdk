@@ -34,7 +34,11 @@
 	<!-- Release 强名称签名。宿主(VelaShell 主仓库,Release 下签名)引用本仓库产出的 SDK
 	     程序集,而已签名程序集不能引用未签名程序集 —— 因此 SDK 必须用**与宿主同一把**钥匙签名。
 	     密钥路径见根 Directory.Build.props 的 VelaStrongNameKey;密钥不入库,CI 从
-	     STRONG_NAME_KEY 机密还原。本地 Debug 构建不签名,不需要密钥。 -->
+	     STRONG_NAME_KEY 机密还原。本地 Debug 构建不签名,不需要密钥。
+	     ⚠️ VelaShell.PluginSdk.Build 是例外:它没有对外的程序集面(IncludeBuildOutput=false),
+	     在自己的 csproj 里把 SignAssembly 与 IncludeSymbols 都显式关掉了 —— 不关的话,
+	     本地 `dotnet pack -c Release` 会因为找不到 .snk 在 CSC 那一步失败,
+	     而 IncludeSymbols 会生成一个空 .snupkg 让 nuget.org 直接 400。理由见那边的注释。 -->
 	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
 		<SignAssembly>true</SignAssembly>
 		<AssemblyOriginatorKeyFile>$(VelaStrongNameKey)</AssemblyOriginatorKeyFile>
