@@ -43,6 +43,17 @@ public sealed record PanelOptions
     /// <summary>面板标题(标签页文字 / 窗口标题)。</summary>
     public required string Title { get; init; }
 
+    /// <summary>
+    /// 标签页上的图标;留空则宿主画一个通用的插件图标。**窗口模式忽略**。
+    /// 形态与取舍见 <see cref="PluginIcon" />(标签页图标三处共用同一个类型)。
+    /// <para>
+    /// 与协议 / 工作台那两处的区别只在**填在哪**:那两个是注册期一个协议一份,
+    /// 这个是每次开面板一份 —— 同一个插件开的聊天页与设置页可以各画各的。
+    /// </para>
+    /// <para>可用版本:TBD(发版时替换为实际 SDK 版本)。</para>
+    /// </summary>
+    public PluginIcon? Icon { get; init; }
+
     /// <summary>呈现方式,默认停靠文档。</summary>
     public PanelDisplayMode DisplayMode { get; init; } = PanelDisplayMode.Document;
 
