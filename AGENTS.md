@@ -133,3 +133,7 @@ Release 下 `dotnet test` 编不过。签名密钥不入库,CI 从 `STRONG_NAME_
 ### 留在本仓库的文档
 
 `README.md`、`LICENSE`,以及 `src/**/README.md`(各包自己的说明)。SDK 参考与发版流程都在 velashell-docs。
+
+### 提交约束
+
+- **所有提交信息与 PR 描述都不要附加 Claude Code 等 AI 工具的作者信息** —— 不加 `Co-Authored-By: Claude …` 行,也不加 `🤖 Generated with Claude Code` 之类的署名。VelaShellLabs 下所有仓库一致适用。
