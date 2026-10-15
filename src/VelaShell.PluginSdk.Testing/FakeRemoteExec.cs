@@ -27,6 +27,24 @@ public sealed class FakeRemoteExec : IRemoteExecApi
     /// </summary>
     public Func<string, string, IEnumerable<ExecOutput>>? StreamHandler { get; set; }
 
+    /// <summary>sudo 专用异步脚本;未设置明确不支持,绝不调用普通命令应答。</summary>
+    public Func<string, string, SudoExecOptions?, IProgress<SudoExecEvent>, CancellationToken, Task<SudoExecResult>>? SudoHandler { get; set; }
+
+    /// <summary>已请求的 sudo 执行(不包含密码或认证内容)。</summary>
+    public List<(string SessionId, string Command)> SudoStreamed { get; } = [];
+
+    /// <inheritdoc />
+    public Task<SudoExecResult> StreamSudoAsync(string sessionId, string command, SudoExecOptions? options,
+        IProgress<SudoExecEvent> progress, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(progress);
+        cancellationToken.ThrowIfCancellationRequested();
+        SudoStreamed.Add((sessionId, command));
+        return SudoHandler is { } handler
+            ? handler(sessionId, command, options, progress, cancellationToken)
+            : Task.FromException<SudoExecResult>(new NotSupportedException("No sudo handler configured."));
+    }
+
     /// <summary>全部已执行的 (sessionId, command) 记录(含流式)。</summary>
     public List<(string SessionId, string Command)> Executed { get; } = [];
 
@@ -37,6 +55,7 @@ public sealed class FakeRemoteExec : IRemoteExecApi
     public Task<ExecResult> RunAsync(string sessionId, string command, ExecOptions? options = null,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         Executed.Add((sessionId, command));
         return Task.FromResult(Respond(sessionId, command));
     }

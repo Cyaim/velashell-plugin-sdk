@@ -47,6 +47,15 @@ public static class PluginRpc
     /// <summary>流式执行的输出通知(宿主 → 插件,带 outputToken)。</summary>
     public const string ExecOutput = "exec/output";
 
+    /// <summary>sudo 专用流式执行;凭据不进入 RPC。</summary>
+    public const string ExecSudoStream = "exec/sudoStream";
+
+    /// <summary>有序非敏感 sudo 事件(宿主 → 插件)。</summary>
+    public const string ExecSudoEvent = "exec/sudoEvent";
+
+    /// <summary>取消该连接的一条执行操作(插件 → 宿主通知,幂等)。</summary>
+    public const string ExecCancel = "exec/cancel";
+
     /// <summary>远程文件:列目录。</summary>
     public const string FsList = "fs/list";
 
@@ -238,7 +247,11 @@ public sealed record HandshakeRequest(string Token, string PluginId, string Plug
 /// 老宿主不带此字段时为 <see langword="null" />,PluginHost 退回按 <paramref name="Theme" /> 猜。
 /// </param>
 public sealed record HandshakeResponse(int ApiLevel, string HostVersion, string Locale, string Theme,
-    bool SupportsEmbedding = false, HostThemeInfo? ThemeInfo = null);
+    bool SupportsEmbedding = false, HostThemeInfo? ThemeInfo = null)
+{
+    /// <summary>支持执行 operationId、真实取消及有序通知;缺席即旧宿主,不可假定支持sudo。</summary>
+    public bool SupportsExecutionOperations { get; init; }
+}
 
 /// <summary>会话查询参数。</summary>
 public sealed record SessionRef(string SessionId);
@@ -263,19 +276,36 @@ public sealed record ExecStreamRequest(
     string Command,
     string OutputToken,
     double TimeoutSeconds,
-    bool IncludeStandardError);
+    bool IncludeStandardError)
+{
+    /// <summary>可取消的执行 id;旧调用方省略时退回 OutputToken。保留原构造及 Deconstruct 的二进制签名。</summary>
+    public string? OperationId { get; init; }
+}
 
 /// <summary>
 /// 流式执行的输出通知载荷。
 /// </summary>
 /// <param name="OutputToken">对应 <see cref="ExecStreamRequest.OutputToken" />。</param>
 /// <param name="IsStandardError">这一行是否来自标准错误。</param>
-/// <param name="Line">一行文本(不含行尾换行)。</param>
+/// <param name="Line">一行文本(不含行尾换行),超长行可分片。</param>
 /// <remarks>
 /// 一行一条通知。看起来很碎,但管道上跑的是长度前缀 + JSON 的轻量帧,而日志的价值
 /// 就在于即时 —— 攒批会让"跟随"变成"每秒抖一下"。真需要攒批的插件自己在回调里攒。
 /// </remarks>
-public sealed record ExecOutputNotification(string OutputToken, bool IsStandardError, string Line);
+public sealed record ExecOutputNotification(string OutputToken, bool IsStandardError, string Line)
+{
+    /// <summary>从 1 开始递增的执行内序号;0 表示旧宿主未提供。保留原构造及 Deconstruct 的二进制签名。</summary>
+    public long Sequence { get; init; }
+}
+
+/// <summary>sudo 请求;来源插件身份由连接绑定,不允许调用方传入。</summary>
+public sealed record ExecSudoStreamRequest(string SessionId, string Command, string OperationId, double TimeoutSeconds);
+
+/// <summary>非敏感 sudo 事件;Sequence 从 1 开始严格递增。</summary>
+public sealed record ExecSudoEventNotification(string OperationId, long Sequence, RemoteExec.SudoExecEvent Event);
+
+/// <summary>执行取消通知;只能作用于同一插件连接的 operationId。</summary>
+public sealed record ExecCancelNotification(string OperationId);
 
 /// <summary>远程文件通用参数(路径类)。</summary>
 public sealed record FsPathRequest(string SessionId, string Path);

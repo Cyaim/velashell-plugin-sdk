@@ -22,6 +22,7 @@ public sealed class RpcConnection : IAsyncDisposable
     private readonly CancellationTokenSource _lifetime = new();
     private Func<string, JsonElement?, CancellationToken, Task<object?>>? _requestHandler;
     private Action<string, JsonElement?>? _notificationHandler;
+    private readonly Dictionary<string, Action<JsonElement?>> _orderedNotificationHandlers = new(StringComparer.Ordinal);
     private Task? _readLoop;
     private int _disposed;
     private int _disconnectRaised;
@@ -39,6 +40,23 @@ public sealed class RpcConnection : IAsyncDisposable
     /// <summary>设置通知处理器(在线程池上调用,异常吞掉不断连)。必须在 <see cref="Start" /> 前设置。</summary>
     public void SetNotificationHandler(Action<string, JsonElement?> handler)
         => _notificationHandler = handler;
+
+    /// <summary>
+    /// 为排序敏感的执行通知注册同步接收器(必须在 Start 前设置)。
+    /// 接收器在单读循环中调用,不得阻塞或等待同一连接的请求;
+    /// 返回后才读取后续帧,因此执行终态应答不会越过已收到的输出。
+    /// 其它通知继续使用原有并发派发,不改变整个 RPC 的调度策略。
+    /// </summary>
+    public void SetOrderedNotificationHandler(string method, Action<JsonElement?> handler)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(method);
+        ArgumentNullException.ThrowIfNull(handler);
+        if (_readLoop is not null)
+        {
+            throw new InvalidOperationException("Ordered handlers must be registered before Start.");
+        }
+        _orderedNotificationHandlers.Add(method, handler);
+    }
 
     /// <summary>启动读循环。</summary>
     public void Start() => _readLoop = Task.Run(ReadLoopAsync);
@@ -101,6 +119,33 @@ public sealed class RpcConnection : IAsyncDisposable
         catch (Exception ex) when (ex is IOException or ObjectDisposedException or RpcDisconnectedException)
         {
             // 通知语义:对端不在就算了。
+        }
+    }
+
+    /// <summary>
+    /// 发送执行输出/状态通知。与普通尽力通知不同,写入失败必须上传给该执行的写泵,
+    /// 由它取消执行并使终态失败;否则最后一条输出丢失会被伪装成成功。
+    /// 仅限执行事件,不改变其它 RPC 通知的原有语义。
+    /// </summary>
+    public async Task NotifyExecutionAsync(string method, object payload)
+    {
+        if (method is not (PluginRpc.ExecOutput or PluginRpc.ExecSudoEvent))
+        {
+            throw new ArgumentException("Only execution output/state notifications are supported.", nameof(method));
+        }
+        try
+        {
+            await WriteAsync(new() { Type = "evt", Method = method, Payload = Serialize(payload) }, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or RpcDisconnectedException)
+        {
+            // WriteAsync 无法知道头/正文已发出多少字节。任何失败都保守断连,
+            // 绝不在可能失步的帧后继续发送成功或错误终态。
+            FailPendingAndNotify();
+            try { await DisposeAsync().ConfigureAwait(false); }
+            catch { /* 保留原始发送错误给执行写泵。 */ }
+            throw;
         }
     }
 
@@ -218,6 +263,17 @@ public sealed class RpcConnection : IAsyncDisposable
             case "req" when message is { Id: { } requestId, Method: { } method }:
                 // 请求在线程池处理:慢处理器不阻塞读循环,天然并发(排序敏感的域由处理器内部串行化)。
                 _ = Task.Run(() => HandleRequestAsync(requestId, method, message.Payload));
+                break;
+            case "evt" when message.Method is { } orderedMethod
+                && _orderedNotificationHandlers.TryGetValue(orderedMethod, out Action<JsonElement?>? orderedHandler):
+                try
+                {
+                    orderedHandler(message.Payload);
+                }
+                catch
+                {
+                    // 与普通通知一样隔离调用方异常;执行代理应自行记住并上报接收失败。
+                }
                 break;
             case "evt" when message.Method is { } eventMethod:
                 _ = Task.Run(() =>

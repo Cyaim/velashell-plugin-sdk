@@ -60,6 +60,12 @@ public static class RpcErrorCodes
     /// <summary>已保存的会话打不开(网络、认证、指纹等)。</summary>
     public const string SessionOpenFailed = "session-open-failed";
 
+    /// <summary>宿主明确不支持该专用能力,不得静默降级。</summary>
+    public const string NotSupported = "not-supported";
+
+    /// <summary>操作已取消,不是执行超时。</summary>
+    public const string Cancelled = "cancelled";
+
     /// <summary>未分类错误。</summary>
     public const string Unknown = "error";
 
@@ -71,7 +77,8 @@ public static class RpcErrorCodes
         // 必须排在 InvalidOperationException 之前:它是后者的子类,顺序反了就永远命中不到
         PluginSessionOpenException => SessionOpenFailed,
         TimeoutException => Timeout,
-        OperationCanceledException => Timeout,
+        OperationCanceledException => Cancelled,
+        NotSupportedException => NotSupported,
         ArgumentException => BadArguments,
         InvalidOperationException => InvalidOperation,
         _ => Unknown
@@ -84,6 +91,8 @@ public static class RpcErrorCodes
         SessionNotFound => new PluginSessionNotFoundException("", message),
         SessionOpenFailed => new PluginSessionOpenException("", message),
         Timeout => new TimeoutException(message),
+        Cancelled => new OperationCanceledException(message),
+        NotSupported => new NotSupportedException(message),
         BadArguments => new ArgumentException(message),
         InvalidOperation => new InvalidOperationException(message),
         _ => new RpcRemoteException(code ?? Unknown, message)

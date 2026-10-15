@@ -103,6 +103,18 @@ public sealed record ExecResult(string Output)
 public interface IRemoteExecApi
 {
     /// <summary>
+    /// 经宿主可信逐次批准及认证,将整条命令以 root 执行。仅支持 Linux sudo,
+    /// 不是通用 stdin/交互 API;密码及认证标记永不交给插件。
+    /// 输出为 PTY 合并文本片段(不是独立 stdout/stderr,不保证行边界)。
+    /// 状态与输出串行回调,返回前排空;接收器必须同步转发,不要使用 Progress&lt;T&gt;。
+    /// 调用方取消抛 OperationCanceledException;执行超时抛 TimeoutException。
+    /// 不支持时必须明确失败,绝不退化为普通执行。
+    /// </summary>
+    Task<SudoExecResult> StreamSudoAsync(string sessionId, string command, SudoExecOptions? options,
+        IProgress<SudoExecEvent> progress, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("This host does not implement sudo remote execution.");
+
+    /// <summary>
     /// 同时在飞的流式执行上限(每插件)。超过时 <see cref="StreamAsync" /> 抛
     /// <see cref="InvalidOperationException" />。
     /// </summary>
