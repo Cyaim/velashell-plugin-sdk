@@ -31,6 +31,71 @@ public readonly record struct RemoteTransferProgress(long TransferredBytes, long
 /// </summary>
 public interface IRemoteFsApi
 {
+    /// <summary>宿主是否实现独立传输任务;旧宿主默认不支持,不可退回长时间同步调用。</summary>
+    bool SupportsTransferOperations => false;
+
+    /// <summary>一次进度等待的最大秒数;等待可重复,不代表传输执行死线。</summary>
+    public const int MaxTransferWaitSeconds = 30;
+
+    /// <summary>
+    /// 启动宿主持有的流式上传,不设固定文件大小上限。返回任务快照,不等待上传完成。
+    /// options.OperationId 在同一插件生命周期内幂等;重试必须复用同一值及参数,
+    /// 参数不符应拒绝,不能开始第二次上传。调用前由插件完成审批,宿主再次校验权限。
+    /// </summary>
+    /// <remarks>
+    /// 令牌只取消启动请求,不是任务寿命。请求取消或丢失响应不证明任务没有启动;
+    /// 应以相同 OperationId 重取回执,不得换新 id 自动重传。
+    /// 任务归属于宿主绑定的插件身份,存活到显式取消、插件停用、权限撤销或宿主退出。
+    /// 所有任务访问均复核本地读取、远端写入权限;不能通过别的插件的 transferId 访问任务。
+    /// 审批绑定规范化的源/目标路径、实际源对象及覆盖策略;排队开始前与传输期间必须保证源稳定,
+    /// 不能通过替换路径、符号链接或并发写入改变已批准内容,无法保证时明确失败。
+    /// 启动、取消、恢复在任务内串行化;先复核授权和幂等记录,再校验当前状态。
+    /// start/resume 的 OperationId 共用插件生命周期命名空间,记录请求种类和全部参数;
+    /// 幂等重取返回当前快照但绝不重复执行。幂等记录/墓碑保留整个插件生命周期,
+    /// 不能回收后以同一 id 重执行;额度满应拒绝新任务。
+    /// 相同 id 参数冲突抛 InvalidOperationException;无效或不属于本插件的 id 统一抛 FileNotFoundException。
+    /// </remarks>
+    Task<RemoteTransferSnapshot> StartUploadAsync(string sessionId, string localPath, string remotePath,
+        RemoteUploadOptions options, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("This host does not implement transfer operations.");
+
+    /// <summary>读取所属插件任务的权威快照;无效或越权 id 不泄漏任务元数据。</summary>
+    Task<RemoteTransferSnapshot> GetTransferAsync(string transferId, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("This host does not implement transfer operations.");
+
+    /// <summary>
+    /// 等待 Sequence 大于 afterSequence 或到达终态,返回最新快照。
+    /// afterSequence 非负,waitTimeout 在零到 MaxTransferWaitSeconds 秒之间;超界应拒绝。
+    /// 等待到期仍返回当前快照,取消令牌仅取消此等待,两者都不停止后台传输。
+    /// </summary>
+    Task<RemoteTransferSnapshot> WaitTransferAsync(string transferId, long afterSequence, TimeSpan waitTimeout,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("This host does not implement transfer operations.");
+
+    /// <summary>
+    /// 幂等请求停止所属插件当前执行代次,返回当前状态,不保证此时已停止。
+    /// 令牌只取消本次请求;已登记的取消意图不回滚。确认停止才标 Cancelled,
+    /// 无法确认则标 Unknown;用户目标不会因取消而被宣称已回滚。
+    /// expectedGeneration 必须为正且等于当前执行代次;旧代次取消抛 InvalidOperationException,
+    /// 绝不停止恢复后的新代次。相同代次的重复取消幂等。
+    /// </summary>
+    Task<RemoteTransferSnapshot> CancelTransferAsync(string transferId, long expectedGeneration, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("This host does not implement transfer operations.");
+
+    /// <summary>
+    /// 显式恢复可恢复的终态任务,保持 transferId 与递增 Sequence;须重新审批及校验授权。
+    /// 先按 options.OperationId 查已登记回执,再检查 ExpectedGeneration 与 CanResume,防止重复恢复。
+    /// 宿主先确认旧传输已停止、尚未提交最终目标、源文件身份未变化及临时检查点归属有效,
+    /// 才能恢复。TargetSessionId 为明确选择的当前连接;宿主校验服务器密钥身份、账户及远端
+    /// 文件命名空间与原连接一致,仅地址相同不足以恢复,无法证明一致则明确拒绝。
+    /// 调用方不能指定路径、偏移或源文件身份绕过校验;不满足时明确失败,不从头重传。
+    /// 新代次 Generation 加一、清除取消意图与完成时刻,按原 Timeout 获得新的显式执行预算。
+    /// 请求令牌只取消本次请求;丢失回执时复用同一 OperationId,不得自动创建新上传。
+    /// </summary>
+    Task<RemoteTransferSnapshot> ResumeTransferAsync(string transferId, RemoteTransferResumeOptions options,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("This host does not implement transfer operations.");
+
     /// <summary>列举远端目录。</summary>
     Task<IReadOnlyList<RemoteFileEntry>> ListDirectoryAsync(string sessionId, string path, CancellationToken cancellationToken = default);
 

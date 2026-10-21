@@ -12,6 +12,104 @@ public sealed class FakeRemoteFs : IRemoteFsApi
     private readonly Dictionary<string, Dictionary<string, byte[]>> _files = [with(StringComparer.Ordinal)];
     private readonly Dictionary<string, HashSet<string>> _dirs = [with(StringComparer.Ordinal)];
 
+    /// <summary>显式模拟宿主是否具备独立传输能力;默认否,不退化为内存整文件上传。</summary>
+    public bool SupportsTransferOperations { get; set; }
+
+    /// <summary>独立上传启动脚本;测试自己控制任务生命周期与快照。</summary>
+    public Func<string, string, string, RemoteUploadOptions, CancellationToken, Task<RemoteTransferSnapshot>>? StartUploadHandler { get; set; }
+
+    /// <summary>读取传输快照脚本。</summary>
+    public Func<string, CancellationToken, Task<RemoteTransferSnapshot>>? GetTransferHandler { get; set; }
+
+    /// <summary>等待进度脚本;等待令牌不是传输的生命周期令牌。</summary>
+    public Func<string, long, TimeSpan, CancellationToken, Task<RemoteTransferSnapshot>>? WaitTransferHandler { get; set; }
+
+    /// <summary>显式取消脚本;没有脚本时不假装已确认停止。</summary>
+    public Func<string, long, CancellationToken, Task<RemoteTransferSnapshot>>? CancelTransferHandler { get; set; }
+
+    /// <summary>显式恢复脚本;没有脚本时不从头重传。</summary>
+    public Func<string, RemoteTransferResumeOptions, CancellationToken, Task<RemoteTransferSnapshot>>? ResumeTransferHandler { get; set; }
+
+    /// <summary>已请求的独立上传;不读取本地文件内容。</summary>
+    public List<(string SessionId, string LocalPath, string RemotePath, RemoteUploadOptions Options)> UploadsStarted { get; } = [];
+
+    /// <summary>已请求的传输查询。</summary>
+    public List<string> TransfersRead { get; } = [];
+
+    /// <summary>已请求的进度等待。</summary>
+    public List<(string TransferId, long AfterSequence, TimeSpan WaitTimeout)> TransfersWaited { get; } = [];
+
+    /// <summary>已请求的显式取消。</summary>
+    public List<(string TransferId, long ExpectedGeneration)> TransfersCancelled { get; } = [];
+
+    /// <summary>已请求的显式恢复。</summary>
+    public List<(string TransferId, RemoteTransferResumeOptions Options)> TransfersResumed { get; } = [];
+
+    /// <inheritdoc />
+    public Task<RemoteTransferSnapshot> StartUploadAsync(string sessionId, string localPath, string remotePath,
+        RemoteUploadOptions options, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentException.ThrowIfNullOrWhiteSpace(options.OperationId);
+        if (options.Timeout is { } timeout && timeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(options));
+        UploadsStarted.Add((sessionId, localPath, remotePath, options));
+        return SupportsTransferOperations && StartUploadHandler is { } handler
+            ? handler(sessionId, localPath, remotePath, options, cancellationToken)
+            : Task.FromException<RemoteTransferSnapshot>(new NotSupportedException("No transfer start handler configured."));
+    }
+
+    /// <inheritdoc />
+    public Task<RemoteTransferSnapshot> GetTransferAsync(string transferId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        TransfersRead.Add(transferId);
+        return SupportsTransferOperations && GetTransferHandler is { } handler
+            ? handler(transferId, cancellationToken)
+            : Task.FromException<RemoteTransferSnapshot>(new NotSupportedException("No transfer query handler configured."));
+    }
+
+    /// <inheritdoc />
+    public Task<RemoteTransferSnapshot> WaitTransferAsync(string transferId, long afterSequence, TimeSpan waitTimeout,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (afterSequence < 0) throw new ArgumentOutOfRangeException(nameof(afterSequence));
+        if (waitTimeout < TimeSpan.Zero || waitTimeout > TimeSpan.FromSeconds(IRemoteFsApi.MaxTransferWaitSeconds))
+            throw new ArgumentOutOfRangeException(nameof(waitTimeout));
+        TransfersWaited.Add((transferId, afterSequence, waitTimeout));
+        return SupportsTransferOperations && WaitTransferHandler is { } handler
+            ? handler(transferId, afterSequence, waitTimeout, cancellationToken)
+            : Task.FromException<RemoteTransferSnapshot>(new NotSupportedException("No transfer wait handler configured."));
+    }
+
+    /// <inheritdoc />
+    public Task<RemoteTransferSnapshot> CancelTransferAsync(string transferId, long expectedGeneration, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (expectedGeneration <= 0) throw new ArgumentOutOfRangeException(nameof(expectedGeneration));
+        TransfersCancelled.Add((transferId, expectedGeneration));
+        return SupportsTransferOperations && CancelTransferHandler is { } handler
+            ? handler(transferId, expectedGeneration, cancellationToken)
+            : Task.FromException<RemoteTransferSnapshot>(new NotSupportedException("No transfer cancellation handler configured."));
+    }
+
+    /// <inheritdoc />
+    public Task<RemoteTransferSnapshot> ResumeTransferAsync(string transferId, RemoteTransferResumeOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentException.ThrowIfNullOrWhiteSpace(options.OperationId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(options.TargetSessionId);
+        if (options.ExpectedGeneration <= 0) throw new ArgumentOutOfRangeException(nameof(options));
+        TransfersResumed.Add((transferId, options));
+        return SupportsTransferOperations && ResumeTransferHandler is { } handler
+            ? handler(transferId, options, cancellationToken)
+            : Task.FromException<RemoteTransferSnapshot>(new NotSupportedException("No transfer resume handler configured."));
+    }
+
     /// <summary>预置一个远端文件(自动创建父目录)。</summary>
     public void AddFile(string sessionId, string path, byte[] content)
     {

@@ -74,6 +74,24 @@ public static class PluginRpc
     /// <summary>远程文件:上传本地路径。</summary>
     public const string FsUpload = "fs/upload";
 
+    /// <summary>启动独立上传任务;仅返回登记快照,不等待文件传输。</summary>
+    public const string FsTransferStartUpload = "fs/transfer/startUpload";
+
+    /// <summary>读取所属插件的传输快照。</summary>
+    public const string FsTransferGet = "fs/transfer/get";
+
+    /// <summary>短暂等待快照更新;等待结束不取消传输。</summary>
+    public const string FsTransferWait = "fs/transfer/wait";
+
+    /// <summary>显式请求取消所属插件的传输。</summary>
+    public const string FsTransferCancel = "fs/transfer/cancel";
+
+    /// <summary>显式恢复已确认停止且可恢复的传输。</summary>
+    public const string FsTransferResume = "fs/transfer/resume";
+
+    /// <summary>独立传输的快照通知(宿主 → 插件);丢帧后通过 get/wait 重取权威快照。</summary>
+    public const string FsTransferProgress = "fs/transfer/progress";
+
     /// <summary>远程文件:读小文件(base64 内联)。</summary>
     public const string FsReadAll = "fs/readAll";
 
@@ -251,6 +269,9 @@ public sealed record HandshakeResponse(int ApiLevel, string HostVersion, string 
 {
     /// <summary>支持执行 operationId、真实取消及有序通知;缺席即旧宿主,不可假定支持sudo。</summary>
     public bool SupportsExecutionOperations { get; init; }
+
+    /// <summary>支持独立上传任务、幂等启动与查询/等待/取消/恢复;缺席即不支持,不可回退长 RPC。</summary>
+    public bool SupportsTransferOperations { get; init; }
 }
 
 /// <summary>会话查询参数。</summary>
@@ -319,6 +340,28 @@ public sealed record FsTransferRequest(string SessionId, string RemotePath, stri
 
 /// <summary>传输进度通知载荷。</summary>
 public sealed record FsProgressNotification(string ProgressToken, long TransferredBytes, long TotalBytes);
+
+/// <summary>启动独立上传;身份由宿主绑定,OperationId 随 Options 传递并幂等去重。</summary>
+public sealed record FsTransferStartUploadRequest(string SessionId, string LocalPath, string RemotePath,
+    RemoteFs.RemoteUploadOptions Options);
+
+/// <summary>所属插件的传输引用;用于查询。</summary>
+public sealed record FsTransferRef(string TransferId);
+
+/// <summary>当前执行代次的传输引用;旧代次取消不能作用于恢复后的新代次。</summary>
+public sealed record FsTransferCancelRequest(string TransferId, long ExpectedGeneration);
+
+/// <summary>等待快照版本变化;WaitSeconds 在 0 到 IRemoteFsApi.MaxTransferWaitSeconds 之间。</summary>
+public sealed record FsTransferWaitRequest(string TransferId, long AfterSequence, double WaitSeconds);
+
+/// <summary>显式恢复请求;OperationId 用于去重,调用方不能指定路径、检查点或源文件身份。</summary>
+public sealed record FsTransferResumeRequest(string TransferId, RemoteFs.RemoteTransferResumeOptions Options);
+
+/// <summary>
+/// 独立传输最新快照;按 TransferId + Sequence 丢弃旧帧。至少 100ms 节流,
+/// 状态变化及时通知,满格不能代替 Succeeded;通知为尽力语义,必须支持 get/wait 补读。
+/// </summary>
+public sealed record FsTransferProgressNotification(RemoteFs.RemoteTransferSnapshot Snapshot);
 
 /// <summary>读小文件参数。</summary>
 public sealed record FsReadAllRequest(string SessionId, string Path, int MaxBytes);
