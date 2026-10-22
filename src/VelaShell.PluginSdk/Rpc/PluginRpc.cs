@@ -77,6 +77,9 @@ public static class PluginRpc
     /// <summary>启动独立上传任务;仅返回登记快照,不等待文件传输。</summary>
     public const string FsTransferStartUpload = "fs/transfer/startUpload";
 
+    /// <summary>启动独立下载任务;仅返回登记快照,不等待文件传输。</summary>
+    public const string FsTransferStartDownload = "fs/transfer/startDownload";
+
     /// <summary>读取所属插件的传输快照。</summary>
     public const string FsTransferGet = "fs/transfer/get";
 
@@ -272,6 +275,9 @@ public sealed record HandshakeResponse(int ApiLevel, string HostVersion, string 
 
     /// <summary>支持独立上传任务、幂等启动与查询/等待/取消/恢复;缺席即不支持,不可回退长 RPC。</summary>
     public bool SupportsTransferOperations { get; init; }
+
+    /// <summary>支持独立下载任务;缺席即不支持,不可回退长 RPC。</summary>
+    public bool SupportsDownloadOperations { get; init; }
 }
 
 /// <summary>会话查询参数。</summary>
@@ -344,6 +350,10 @@ public sealed record FsProgressNotification(string ProgressToken, long Transferr
 /// <summary>启动独立上传;身份由宿主绑定,OperationId 随 Options 传递并幂等去重。</summary>
 public sealed record FsTransferStartUploadRequest(string SessionId, string LocalPath, string RemotePath,
     RemoteFs.RemoteUploadOptions Options);
+
+/// <summary>启动独立下载;身份由宿主绑定,OperationId 与上传共享命名空间。</summary>
+public sealed record FsTransferStartDownloadRequest(string SessionId, string RemotePath, string LocalPath,
+    RemoteFs.RemoteDownloadOptions Options);
 
 /// <summary>所属插件的传输引用;用于查询。</summary>
 public sealed record FsTransferRef(string TransferId);

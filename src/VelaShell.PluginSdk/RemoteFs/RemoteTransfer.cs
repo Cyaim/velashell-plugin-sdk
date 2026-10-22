@@ -1,5 +1,29 @@
 namespace VelaShell.PluginSdk.RemoteFs;
 
+/// <summary>传输方向。缺失方向按 Upload 处理以保持旧快照兼容。</summary>
+public enum RemoteTransferDirection
+{
+    /// <summary>上传到远端(旧契约默认值)。</summary>
+    Upload = 0,
+    /// <summary>从远端下载到本地。</summary>
+    Download
+}
+
+/// <summary>独立传输所处的轻量生命周期阶段。</summary>
+public enum RemoteTransferPhase
+{
+    /// <summary>阶段未知(旧宿主或尚未报告)。</summary>
+    Unknown = 0,
+    /// <summary>等待或执行宿主审批。</summary>
+    Approval,
+    /// <summary>正在流式传输。</summary>
+    Transfer,
+    /// <summary>校验传输结果。</summary>
+    Verification,
+    /// <summary>提交最终目标。</summary>
+    Commit
+}
+
 /// <summary>独立上传任务状态;缺失状态按 Unknown 处理,绝不默认成功。</summary>
 public enum RemoteTransferState
 {
@@ -42,6 +66,21 @@ public sealed record RemoteUploadOptions
     public TimeSpan? Timeout { get; init; }
 }
 
+/// <summary>独立下载选项;从远端流式写入本地最终目标,不携带恢复偏移。</summary>
+public sealed record RemoteDownloadOptions
+{
+    /// <summary>调用方生成的非空幂等标识;与上传共享同一插件生命周期命名空间。</summary>
+    public required string OperationId { get; init; }
+
+    /// <summary>是否允许原子替换现有本地目标,默认否。</summary>
+    public bool Overwrite { get; init; }
+
+    /// <summary>
+    /// 每执行代次的显式预算;null 无死线,非 null 必须为正;从登记开始计算,包含排队、审批、传输及收尾。
+    /// </summary>
+    public TimeSpan? Timeout { get; init; }
+}
+
 /// <summary>显式恢复选项;由宿主校验重连目标与原任务身份,不接受调用方指定偏移。</summary>
 public sealed record RemoteTransferResumeOptions
 {
@@ -65,16 +104,22 @@ public sealed record RemoteTransferSnapshot
     /// <summary>宿主生成的不透明随机 id;不能凭 id 绕过插件归属与授权检查。</summary>
     public required string TransferId { get; init; }
 
-    /// <summary>上传启动的幂等标识。</summary>
+    /// <summary>上传或下载启动的幂等标识。</summary>
     public required string OperationId { get; init; }
 
-    /// <summary>目标 SSH 会话 id。</summary>
+    /// <summary>传输方向;旧快照缺失时默认为 Upload。</summary>
+    public RemoteTransferDirection Direction { get; init; }
+
+    /// <summary>轻量阶段;旧快照缺失时为 Unknown。</summary>
+    public RemoteTransferPhase Phase { get; init; }
+
+    /// <summary>执行传输所用的 SSH 会话 id。</summary>
     public required string SessionId { get; init; }
 
-    /// <summary>宿主确认的本地源文件绝对路径。</summary>
+    /// <summary>上传时为宿主确认的本地源;下载时为最终本地目标(不是内部临时文件路径)。</summary>
     public required string LocalPath { get; init; }
 
-    /// <summary>最终远端目标路径,不是内部临时文件路径。</summary>
+    /// <summary>上传时为最终远端目标;下载时为宿主确认的远端源。</summary>
     public required string RemotePath { get; init; }
 
     /// <summary>默认 Unknown;包括正在收尾的满字节状态也不能推断为 Succeeded。</summary>
@@ -138,7 +183,7 @@ public sealed record RemoteTransferSnapshot
     /// <summary>仅以确认成功状态判断;不能通过字节比例推断成功。</summary>
     public bool IsSuccess => State == RemoteTransferState.Succeeded;
 
-    /// <summary>只允许显式恢复已确认停止且存在有效检查点的非成功终态。</summary>
-    public bool CanResume => IsTerminal && !IsSuccess && RemoteStopConfirmed && Resumable
-        && DestinationCommitConfirmedAbsent;
+    /// <summary>只允许上传任务显式恢复已确认停止且存在有效检查点的非成功终态;下载永不支持恢复。</summary>
+    public bool CanResume => Direction != RemoteTransferDirection.Download && IsTerminal && !IsSuccess
+        && RemoteStopConfirmed && Resumable && DestinationCommitConfirmedAbsent;
 }

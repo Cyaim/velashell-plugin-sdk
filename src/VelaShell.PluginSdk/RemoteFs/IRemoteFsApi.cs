@@ -34,6 +34,9 @@ public interface IRemoteFsApi
     /// <summary>宿主是否实现独立传输任务;旧宿主默认不支持,不可退回长时间同步调用。</summary>
     bool SupportsTransferOperations => false;
 
+    /// <summary>宿主是否实现独立下载任务;旧宿主默认不支持,不可退回长时间同步调用。</summary>
+    bool SupportsDownloadOperations => false;
+
     /// <summary>一次进度等待的最大秒数;等待可重复,不代表传输执行死线。</summary>
     public const int MaxTransferWaitSeconds = 30;
 
@@ -58,6 +61,21 @@ public interface IRemoteFsApi
     Task<RemoteTransferSnapshot> StartUploadAsync(string sessionId, string localPath, string remotePath,
         RemoteUploadOptions options, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("This host does not implement transfer operations.");
+
+    /// <summary>
+    /// 启动宿主持有的流式下载,不设固定文件大小上限,不等待传输完成。RemotePath 为远端源,
+    /// LocalPath 为最终本地目标;下载不支持恢复。OperationId 与上传共享插件生命周期命名空间,
+    /// 按方向、会话、路径及全部选项幂等去重。
+    /// </summary>
+    /// <remarks>
+    /// 请求令牌只取消本次启动回执等待,不取消已登记的后台任务;回执丢失时必须复用同一 OperationId。
+    /// 宿主在传输前展示并校验远端读取、本地写入、覆盖策略及真实会话的单任务审批;权限撤销会使待审批
+    /// 与活动任务失效并请求取消,提交前重新校验。默认 Overwrite=false 必须使用宿主临时文件和原子无替换提交,
+    /// 不能只做预先存在性检查或先删除目标。无支持时明确抛 NotSupportedException,不退回 DownloadFileAsync。
+    /// </remarks>
+    Task<RemoteTransferSnapshot> StartDownloadAsync(string sessionId, string remotePath, string localPath,
+        RemoteDownloadOptions options, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("This host does not implement download transfer operations.");
 
     /// <summary>读取所属插件任务的权威快照;无效或越权 id 不泄漏任务元数据。</summary>
     Task<RemoteTransferSnapshot> GetTransferAsync(string transferId, CancellationToken cancellationToken = default)

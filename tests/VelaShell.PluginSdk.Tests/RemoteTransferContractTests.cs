@@ -51,6 +51,7 @@ public sealed class RemoteTransferContractTests
         IRemoteFsApi fs = legacy;
         Assert.IsFalse(fs.SupportsTransferOperations);
         Assert.ThrowsExactly<NotSupportedException>(() => fs.StartUploadAsync("s", "local", "/remote", new() { OperationId = "op" }));
+        Assert.ThrowsExactly<NotSupportedException>(() => fs.StartDownloadAsync("s", "/remote", "local", new() { OperationId = "op" }));
         Assert.ThrowsExactly<NotSupportedException>(() => fs.GetTransferAsync("t"));
         Assert.ThrowsExactly<NotSupportedException>(() => fs.WaitTransferAsync("t", 0, TimeSpan.Zero));
         Assert.ThrowsExactly<NotSupportedException>(() => fs.CancelTransferAsync("t", 1));
@@ -63,6 +64,8 @@ public sealed class RemoteTransferContractTests
     {
         var fake = new FakeRemoteFs();
         var options = new RemoteUploadOptions { OperationId = "operation" };
+        var downloadOptions = new RemoteDownloadOptions { OperationId = "download-operation" };
+        await Assert.ThrowsExactlyAsync<NotSupportedException>(() => fake.StartDownloadAsync("s", "/remote", "missing.bin", downloadOptions));
         await Assert.ThrowsExactlyAsync<NotSupportedException>(() => fake.StartUploadAsync("s", "missing.bin", "/remote", options));
         fake.SupportsTransferOperations = true;
         await Assert.ThrowsExactlyAsync<NotSupportedException>(() => fake.StartUploadAsync("s", "missing.bin", "/remote", options));
@@ -79,9 +82,20 @@ public sealed class RemoteTransferContractTests
         using var cts = new CancellationTokenSource();
         var options = new RemoteUploadOptions { OperationId = "start", Overwrite = true, Timeout = TimeSpan.FromHours(10) };
         RemoteTransferSnapshot expected = Snapshot();
+        var downloadOptions = new RemoteDownloadOptions { OperationId = "download", Overwrite = true, Timeout = TimeSpan.FromHours(10) };
         var fake = new FakeRemoteFs
         {
             SupportsTransferOperations = true,
+            SupportsDownloadOperations = true,
+            StartDownloadHandler = (session, remote, local, actualOptions, token) =>
+            {
+                Assert.AreEqual("s", session);
+                Assert.AreEqual("/remote", remote);
+                Assert.AreEqual("missing.bin", local);
+                Assert.AreSame(downloadOptions, actualOptions);
+                Assert.AreEqual(cts.Token, token);
+                return Task.FromResult(expected with { Direction = RemoteTransferDirection.Download });
+            },
             StartUploadHandler = (session, local, remote, actualOptions, token) =>
             {
                 Assert.AreEqual("s", session);
@@ -120,6 +134,8 @@ public sealed class RemoteTransferContractTests
                 return Task.FromResult(expected);
             }
         };
+        RemoteTransferSnapshot downloading = await fake.StartDownloadAsync("s", "/remote", "missing.bin", downloadOptions, cts.Token);
+        Assert.AreEqual(RemoteTransferDirection.Download, downloading.Direction);
         Assert.AreSame(expected, await fake.StartUploadAsync("s", "missing.bin", "/remote", options, cts.Token));
         Assert.AreSame(expected, await fake.GetTransferAsync("transfer", cts.Token));
         Assert.AreSame(expected, await fake.WaitTransferAsync("transfer", 1, TimeSpan.FromSeconds(30), cts.Token));
@@ -127,12 +143,14 @@ public sealed class RemoteTransferContractTests
         Assert.IsFalse(cancelling.IsTerminal);
         Assert.IsFalse(cancelling.RemoteStopConfirmed);
         Assert.AreSame(expected, await fake.ResumeTransferAsync("transfer", ResumeOptions(), cts.Token));
-        Assert.AreEqual(1, fake.UploadsStarted.Count);
-        Assert.AreEqual(1, fake.TransfersRead.Count);
-        Assert.AreEqual(1, fake.TransfersWaited.Count);
-        Assert.AreEqual(1, fake.TransfersCancelled.Count);
+        Assert.HasCount(1, fake.UploadsStarted);
+        Assert.HasCount(1, fake.DownloadsStarted);
+        Assert.AreEqual(("s", "/remote", "missing.bin", downloadOptions), fake.DownloadsStarted[0]);
+        Assert.HasCount(1, fake.TransfersRead);
+        Assert.HasCount(1, fake.TransfersWaited);
+        Assert.HasCount(1, fake.TransfersCancelled);
         Assert.AreEqual(("transfer", 1L), fake.TransfersCancelled[0]);
-        Assert.AreEqual(1, fake.TransfersResumed.Count);
+        Assert.HasCount(1, fake.TransfersResumed);
         Assert.AreEqual(("transfer", ResumeOptions()), fake.TransfersResumed[0]);
     }
 
@@ -141,8 +159,13 @@ public sealed class RemoteTransferContractTests
     {
         var waiting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         RemoteTransferSnapshot running = Snapshot();
-        var fake = new FakeRemoteFs { SupportsTransferOperations = true };
+        var fake = new FakeRemoteFs { SupportsDownloadOperations = true };
+        fake.GetTransferHandler = (_, _) => Task.FromResult(running);
         fake.WaitTransferHandler = (_, _, _, _) => Task.FromResult(running);
+        fake.CancelTransferHandler = (_, _, _) => Task.FromResult(running);
+        Assert.AreSame(running, await fake.GetTransferAsync("transfer"));
+        Assert.AreSame(running, await fake.CancelTransferAsync("transfer", 1));
+        int cancelCount = fake.TransfersCancelled.Count;
         Assert.AreSame(running, await fake.WaitTransferAsync("transfer", 1, TimeSpan.Zero));
         using var cts = new CancellationTokenSource();
         fake.WaitTransferHandler = async (_, _, _, token) =>
@@ -155,21 +178,22 @@ public sealed class RemoteTransferContractTests
         await waiting.Task;
         cts.Cancel();
         await Assert.ThrowsAsync<OperationCanceledException>(() => wait);
-        Assert.AreEqual(0, fake.TransfersCancelled.Count);
+        Assert.AreEqual(cancelCount, fake.TransfersCancelled.Count);
     }
 
     [TestMethod]
     public async Task CancelledRequests_AreNotDispatched()
     {
-        var fake = new FakeRemoteFs { SupportsTransferOperations = true };
+        var fake = new FakeRemoteFs { SupportsTransferOperations = true, SupportsDownloadOperations = true };
         using var cts = new CancellationTokenSource();
         cts.Cancel();
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(() => fake.StartDownloadAsync("s", "/remote", "local", new() { OperationId = "download-op" }, cts.Token));
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(() => fake.StartUploadAsync("s", "local", "/remote", new() { OperationId = "op" }, cts.Token));
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(() => fake.GetTransferAsync("t", cts.Token));
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(() => fake.WaitTransferAsync("t", 0, TimeSpan.Zero, cts.Token));
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(() => fake.CancelTransferAsync("t", 1, cts.Token));
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(() => fake.ResumeTransferAsync("t", ResumeOptions("op"), cts.Token));
-        Assert.AreEqual(0, fake.UploadsStarted.Count + fake.TransfersRead.Count + fake.TransfersWaited.Count
+        Assert.AreEqual(0, fake.UploadsStarted.Count + fake.DownloadsStarted.Count + fake.TransfersRead.Count + fake.TransfersWaited.Count
             + fake.TransfersCancelled.Count + fake.TransfersResumed.Count);
     }
 
@@ -182,11 +206,13 @@ public sealed class RemoteTransferContractTests
         Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => fake.WaitTransferAsync("t", 0, TimeSpan.FromSeconds(31)));
         Assert.ThrowsExactly<ArgumentException>(() => fake.StartUploadAsync("s", "local", "/remote", new() { OperationId = " " }));
         Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => fake.StartUploadAsync("s", "local", "/remote", new() { OperationId = "op", Timeout = TimeSpan.Zero }));
+        Assert.ThrowsExactly<ArgumentException>(() => fake.StartDownloadAsync("s", "/remote", "local", new() { OperationId = " " }));
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => fake.StartDownloadAsync("s", "/remote", "local", new() { OperationId = "op", Timeout = TimeSpan.Zero }));
         Assert.ThrowsExactly<ArgumentException>(() => fake.ResumeTransferAsync("t", ResumeOptions(" ")));
         Assert.ThrowsExactly<ArgumentException>(() => fake.ResumeTransferAsync("t", ResumeOptions() with { TargetSessionId = " " }));
         Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => fake.ResumeTransferAsync("t", ResumeOptions() with { ExpectedGeneration = 0 }));
         Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => fake.CancelTransferAsync("t", 0));
-        Assert.AreEqual(0, fake.UploadsStarted.Count + fake.TransfersWaited.Count + fake.TransfersResumed.Count);
+        Assert.AreEqual(0, fake.UploadsStarted.Count + fake.DownloadsStarted.Count + fake.TransfersWaited.Count + fake.TransfersResumed.Count);
     }
 
     [TestMethod]
@@ -195,6 +221,8 @@ public sealed class RemoteTransferContractTests
         RemoteTransferSnapshot unknown = JsonSerializer.Deserialize<RemoteTransferSnapshot>(
             """{"TransferId":"t","OperationId":"op","SessionId":"s","LocalPath":"local","RemotePath":"/remote"}""")!;
         Assert.AreEqual(RemoteTransferState.Unknown, unknown.State);
+        Assert.AreEqual(RemoteTransferDirection.Upload, unknown.Direction);
+        Assert.AreEqual(RemoteTransferPhase.Unknown, unknown.Phase);
         Assert.AreEqual(-1L, unknown.TotalBytes);
         Assert.IsTrue(unknown.IsTerminal);
         Assert.IsFalse(unknown.IsSuccess);
@@ -203,6 +231,8 @@ public sealed class RemoteTransferContractTests
         Assert.IsFalse(full.IsSuccess);
         Assert.IsFalse(full.IsTerminal);
         Assert.IsTrue((full with { State = RemoteTransferState.Succeeded }).IsSuccess);
+        Assert.IsFalse((unknown with { Direction = RemoteTransferDirection.Download, Resumable = true,
+            RemoteStopConfirmed = true, DestinationCommitConfirmedAbsent = true }).CanResume);
         Assert.IsFalse((full with { State = RemoteTransferState.Succeeded, Resumable = true, RemoteStopConfirmed = true }).CanResume);
         Assert.IsFalse((unknown with { Resumable = true }).CanResume);
         Assert.IsFalse((unknown with { Resumable = true, RemoteStopConfirmed = true }).CanResume,
@@ -220,6 +250,7 @@ public sealed class RemoteTransferContractTests
             SpeedBytesPerSecond = 100000000, EstimatedTimeRemaining = TimeSpan.FromHours(2)
         };
         RoundTrip(new FsTransferStartUploadRequest("s", "local", "/remote", new() { OperationId = "op" }));
+        RoundTrip(new FsTransferStartDownloadRequest("s", "/remote", "local", new() { OperationId = "download" }));
         RoundTrip(new FsTransferRef("t"));
         RoundTrip(new FsTransferWaitRequest("t", snapshot.Sequence, 30));
         RoundTrip(new FsTransferResumeRequest("t", ResumeOptions()));
@@ -228,14 +259,15 @@ public sealed class RemoteTransferContractTests
         HandshakeResponse legacy = JsonSerializer.Deserialize<HandshakeResponse>(
             """{"ApiLevel":2,"HostVersion":"1","Locale":"en","Theme":"dark"}""")!;
         Assert.IsFalse(legacy.SupportsTransferOperations);
-        RoundTrip(legacy with { SupportsTransferOperations = true });
+        Assert.IsFalse(legacy.SupportsDownloadOperations);
+        RoundTrip(legacy with { SupportsTransferOperations = true, SupportsDownloadOperations = true });
         Assert.IsNotNull(typeof(FsTransferRequest).GetConstructor([typeof(string), typeof(string), typeof(string), typeof(string)]));
-        Assert.AreEqual(4, typeof(FsTransferRequest).GetMethod("Deconstruct")!.GetParameters().Length);
-        Assert.AreEqual(3, typeof(FsProgressNotification).GetMethod("Deconstruct")!.GetParameters().Length);
-        Assert.AreEqual(6, typeof(HandshakeResponse).GetMethod("Deconstruct")!.GetParameters().Length);
-        string[] methods = [PluginRpc.FsTransferStartUpload, PluginRpc.FsTransferGet, PluginRpc.FsTransferWait,
+        Assert.HasCount(4, typeof(FsTransferRequest).GetMethod("Deconstruct")!.GetParameters());
+        Assert.HasCount(3, typeof(FsProgressNotification).GetMethod("Deconstruct")!.GetParameters());
+        Assert.HasCount(6, typeof(HandshakeResponse).GetMethod("Deconstruct")!.GetParameters());
+        string[] methods = [PluginRpc.FsTransferStartUpload, PluginRpc.FsTransferStartDownload, PluginRpc.FsTransferGet, PluginRpc.FsTransferWait,
             PluginRpc.FsTransferCancel, PluginRpc.FsTransferResume, PluginRpc.FsTransferProgress];
-        Assert.AreEqual(6, methods.Distinct(StringComparer.Ordinal).Count());
+        Assert.HasCount(7, methods.Distinct(StringComparer.Ordinal));
         Assert.IsTrue(methods.All(m => m.StartsWith("fs/transfer/", StringComparison.Ordinal)));
     }
 

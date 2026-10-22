@@ -15,11 +15,32 @@ public sealed class FakeRemoteFs : IRemoteFsApi
     /// <summary>显式模拟宿主是否具备独立传输能力;默认否,不退化为内存整文件上传。</summary>
     public bool SupportsTransferOperations { get; set; }
 
+    /// <summary>显式模拟宿主是否具备独立下载能力;默认否,不退化为同步下载。</summary>
+    public bool SupportsDownloadOperations { get; set; }
+
     /// <summary>独立上传启动脚本;测试自己控制任务生命周期与快照。</summary>
     public Func<string, string, string, RemoteUploadOptions, CancellationToken, Task<RemoteTransferSnapshot>>? StartUploadHandler { get; set; }
 
+    /// <summary>独立下载启动脚本;测试自己控制任务生命周期与快照。</summary>
+    public Func<string, string, string, RemoteDownloadOptions, CancellationToken, Task<RemoteTransferSnapshot>>? StartDownloadHandler { get; set; }
+
     /// <summary>读取传输快照脚本。</summary>
     public Func<string, CancellationToken, Task<RemoteTransferSnapshot>>? GetTransferHandler { get; set; }
+
+    /// <inheritdoc />
+    public Task<RemoteTransferSnapshot> StartDownloadAsync(string sessionId, string remotePath, string localPath,
+        RemoteDownloadOptions options, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentException.ThrowIfNullOrWhiteSpace(options.OperationId);
+        if (options.Timeout is { } timeout && timeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(options));
+        DownloadsStarted.Add((sessionId, remotePath, localPath, options));
+        return SupportsDownloadOperations && StartDownloadHandler is { } handler
+            ? handler(sessionId, remotePath, localPath, options, cancellationToken)
+            : Task.FromException<RemoteTransferSnapshot>(new NotSupportedException("No download start handler configured."));
+    }
 
     /// <summary>等待进度脚本;等待令牌不是传输的生命周期令牌。</summary>
     public Func<string, long, TimeSpan, CancellationToken, Task<RemoteTransferSnapshot>>? WaitTransferHandler { get; set; }
@@ -32,6 +53,9 @@ public sealed class FakeRemoteFs : IRemoteFsApi
 
     /// <summary>已请求的独立上传;不读取本地文件内容。</summary>
     public List<(string SessionId, string LocalPath, string RemotePath, RemoteUploadOptions Options)> UploadsStarted { get; } = [];
+
+    /// <summary>已请求的独立下载;不读取远端文件内容。</summary>
+    public List<(string SessionId, string RemotePath, string LocalPath, RemoteDownloadOptions Options)> DownloadsStarted { get; } = [];
 
     /// <summary>已请求的传输查询。</summary>
     public List<string> TransfersRead { get; } = [];
@@ -65,7 +89,7 @@ public sealed class FakeRemoteFs : IRemoteFsApi
     {
         cancellationToken.ThrowIfCancellationRequested();
         TransfersRead.Add(transferId);
-        return SupportsTransferOperations && GetTransferHandler is { } handler
+        return (SupportsTransferOperations || SupportsDownloadOperations) && GetTransferHandler is { } handler
             ? handler(transferId, cancellationToken)
             : Task.FromException<RemoteTransferSnapshot>(new NotSupportedException("No transfer query handler configured."));
     }
@@ -79,7 +103,7 @@ public sealed class FakeRemoteFs : IRemoteFsApi
         if (waitTimeout < TimeSpan.Zero || waitTimeout > TimeSpan.FromSeconds(IRemoteFsApi.MaxTransferWaitSeconds))
             throw new ArgumentOutOfRangeException(nameof(waitTimeout));
         TransfersWaited.Add((transferId, afterSequence, waitTimeout));
-        return SupportsTransferOperations && WaitTransferHandler is { } handler
+        return (SupportsTransferOperations || SupportsDownloadOperations) && WaitTransferHandler is { } handler
             ? handler(transferId, afterSequence, waitTimeout, cancellationToken)
             : Task.FromException<RemoteTransferSnapshot>(new NotSupportedException("No transfer wait handler configured."));
     }
@@ -90,7 +114,7 @@ public sealed class FakeRemoteFs : IRemoteFsApi
         cancellationToken.ThrowIfCancellationRequested();
         if (expectedGeneration <= 0) throw new ArgumentOutOfRangeException(nameof(expectedGeneration));
         TransfersCancelled.Add((transferId, expectedGeneration));
-        return SupportsTransferOperations && CancelTransferHandler is { } handler
+        return (SupportsTransferOperations || SupportsDownloadOperations) && CancelTransferHandler is { } handler
             ? handler(transferId, expectedGeneration, cancellationToken)
             : Task.FromException<RemoteTransferSnapshot>(new NotSupportedException("No transfer cancellation handler configured."));
     }
