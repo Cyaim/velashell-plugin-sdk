@@ -16,7 +16,7 @@
 | `FakeRemoteExec` | `IRemoteExecApi`：用 `Handler` 委托按命令文本给定输出。 |
 | `FakeRemoteFs` | `IRemoteFsApi`（远程文件读写与列目录）。 |
 | `FakeTerminal` | `ITerminalApi`（读终端尾部输出、回写终端）。 |
-| `FakeUi` | `IUiApi`（面板与对话框）。 |
+| `FakeUi` | `IUiApi`（面板与消息中心通知）：`PostedNotifications` 是实际进列表的消息，`NotificationRequests` 是全部投递；与宿主同一套校验与同 id 去重，`NotificationOutcome` 脚本模拟限流 / 静音，`SupportsNotifications = false` 模拟旧宿主。 |
 | `RecordingCommands` | `ICommandsApi`：记录注册的命令，可用 `RunAsync(id)` 直接触发。 |
 | `TestHostEvents` | `IHostEvents`：手动投递宿主事件。 |
 | `CollectingLogger` | `IPluginLogger`：收集日志行供断言。 |

@@ -24,6 +24,29 @@ public enum RemoteTransferPhase
     Commit
 }
 
+/// <summary>
+/// 宿主在<b>登记任务之前</b>拒绝启动的原因,见 <see cref="PluginTransferRejectedException" />。
+/// 数值显式给出并且<b>只增不改</b>;线上按短横线名传(<c>source-in-use</c> 一类),不认识的名字读成 <see cref="Unknown" />。
+/// <para>可用版本:TBD(发版时替换)。</para>
+/// </summary>
+public enum RemoteTransferRejectReason
+{
+    /// <summary>宿主拒绝了、但原因本 SDK 不认识(更新的宿主)。「没有登记、什么都没开始」这一保证照样成立。</summary>
+    Unknown = 0,
+
+    /// <summary>源不存在或已被删除(上传是本地源,下载是远端源)。</summary>
+    SourceNotFound = 1,
+
+    /// <summary>源被其它程序占用或锁定,宿主无法以稳定的方式打开它(例如 Windows 上的共享冲突)。</summary>
+    SourceInUse = 2,
+
+    /// <summary>本插件的活动 / 排队任务数,或插件生命周期内的回执额度已满。等已有任务结束再试。</summary>
+    QuotaExceeded = 3,
+
+    /// <summary>宿主在本机准备快照或临时文件所需的空间不足。</summary>
+    InsufficientSpace = 4
+}
+
 /// <summary>独立上传任务状态;缺失状态按 Unknown 处理,绝不默认成功。</summary>
 public enum RemoteTransferState
 {

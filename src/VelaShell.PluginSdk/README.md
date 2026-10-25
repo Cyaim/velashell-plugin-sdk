@@ -11,13 +11,14 @@
 | `IVelaPlugin.cs` `IPluginContext.cs` `VelaPluginAttribute.cs` | 插件入口契约与激活/停用生命周期。 |
 | `VelaPluginApi.cs` | `apiLevel` 版本常量（当前 = **2**）。 |
 | `Sessions/` `RemoteFs/` `RemoteExec/` `Terminal/` | 远程侧能力：会话枚举与打开已保存的会话、远程文件读写、远程命令执行、终端读写。 |
-| `Commands/` `Ui/` `Clipboard/` | 宿主侧能力：命令注册、面板/对话框、剪贴板。 |
+| `Commands/` `Ui/` `Clipboard/` | 宿主侧能力：命令注册、面板/对话框与消息中心通知（`PluginNotification`）、剪贴板。 |
 | `Storage/` `Secrets/` `TimeSeries/` | 持久化能力：KV 存储、加密机密、时序数据（含 `TimeSeriesModel` 与写入校验）。 |
 | `Logging/` `Events/` | 插件日志与宿主事件订阅。 |
+| `Versioning/` | `SemanticVersion`：宿主、`vela-plugin` 与插件商店共用的版本解析与比较（SemVer 2.0 优先级；装载闸用只比数字段的 `CompareCoreTo`）。 |
 | `Manifest/` | `plugin.json` 的模型、读取器与错误类型（`PluginManifest`/`PluginManifestReader`/`PluginManifestException`）。 |
 | `Hosting/` | 装载侧工具：`PluginAssemblyLoadContext`（可收集 ALC，`Avalonia*` 前缀回落到装载方以保证类型同一）、`PluginEntryLocator`、`JsonFilePluginStorage`。 |
 | `Rpc/` | 隔离模式的线协议：`PluginRpc`（方法名常量与载荷记录）、`RpcConnection`、`RpcMessage`。 |
-| `PluginPermissionDeniedException.cs` `PluginSessionNotFoundException.cs` `PluginSessionOpenException.cs` | 跨边界的异常类型。 |
+| `PluginPermissionDeniedException.cs` `PluginSessionNotFoundException.cs` `PluginSessionOpenException.cs` `PluginTransferRejectedException.cs` | 跨边界的异常类型（「用户拒绝」「会话不在」「连不上」「传输启动前被拒」各是各的类型）。 |
 
 ## 🔑 纪律
 

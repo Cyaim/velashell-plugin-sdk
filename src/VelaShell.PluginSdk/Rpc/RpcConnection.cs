@@ -8,6 +8,10 @@ namespace VelaShell.PluginSdk.Rpc;
 /// 命名管道(或任意双工流)上的轻量双向 RPC:请求/应答/通知,并发不排队,
 /// 单读循环 + 写锁串行化写入。两端对称 —— 谁都能发请求与通知。
 /// 断开时全部未决请求以 <see cref="RpcDisconnectedException" /> 失败并触发 <see cref="Disconnected" />。
+/// <para>
+/// 帧是原子的:一帧要么整帧写完、要么一个字节都不写。调用方的取消令牌只在排队拿写闸时生效,
+/// 写入开始后取消只让调用方不再等待、帧照样写完;写到一半失败则整条连接作废(见 <c>WriteAsync</c>)。
+/// </para>
 /// </summary>
 public sealed class RpcConnection : IAsyncDisposable
 {
@@ -26,6 +30,9 @@ public sealed class RpcConnection : IAsyncDisposable
     private Task? _readLoop;
     private int _disposed;
     private int _disconnectRaised;
+
+    /// <summary>有一帧写到一半失败过:连接已经失步,之后一个字节都不能再写(见 <see cref="WriteAsync" />)。</summary>
+    private int _writeBroken;
 
     /// <summary>包装一条已连接的双工流(通常为 NamedPipe)。调用 <see cref="Start" /> 后才开始收发。</summary>
     public RpcConnection(Stream stream) => _stream = stream;
@@ -62,8 +69,14 @@ public sealed class RpcConnection : IAsyncDisposable
     public void Start() => _readLoop = Task.Run(ReadLoopAsync);
 
     /// <summary>发出请求并等待应答;应答载荷反序列化为 <typeparamref name="TResult" />。</summary>
+    /// <remarks>
+    /// <paramref name="cancellationToken" /> 在请求帧开始写出之前取消,请求根本不发;开始写出之后取消,
+    /// 帧照样完整写出(对端仍会执行),调用方只是立即不再等待应答。需要「取消即通知对端停止」的操作
+    /// 要像执行操作那样另发取消通知,不能指望撤回已经发出的请求。
+    /// </remarks>
     /// <exception cref="TimeoutException">超过 <paramref name="timeout" /> 未收到应答。</exception>
     /// <exception cref="RpcDisconnectedException">等待期间连接断开。</exception>
+    /// <exception cref="OperationCanceledException">调用方取消。</exception>
     public async Task<TResult?> RequestAsync<TResult>(string method, object? payload, TimeSpan timeout,
         CancellationToken cancellationToken = default)
     {
@@ -108,7 +121,10 @@ public sealed class RpcConnection : IAsyncDisposable
         }
     }
 
-    /// <summary>发出无应答通知(尽力而为:断开时静默丢弃)。</summary>
+    /// <summary>
+    /// 发出无应答通知(尽力而为:断开时静默丢弃)。「尽力」只针对这一条通知 ——
+    /// 写到一半失败的话整条连接照样作废(见 <see cref="WriteAsync" />),不会带着半帧继续用。
+    /// </summary>
     public async Task NotifyAsync(string method, object? payload)
     {
         try
@@ -152,22 +168,133 @@ public sealed class RpcConnection : IAsyncDisposable
     private static JsonElement? Serialize(object? payload)
         => payload is null ? null : JsonSerializer.SerializeToElement(payload, payload.GetType(), JsonOptions);
 
+    /// <summary>
+    /// 写一帧。<b>一帧要么整帧写完、要么一个字节都不写</b> —— 长度前缀的帧流没有重新同步的办法,
+    /// 写出半帧之后对端会把后续字节当成下一帧的长度去读,整条连接从此失步。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 调用方的 <paramref name="cancellationToken" /> <b>只管排队</b>:在拿到写闸之前取消,这一帧根本不发,
+    /// 抛 <see cref="OperationCanceledException" />。拿到写闸之后这一帧就归连接所有,流写入不再带任何令牌
+    /// (与读侧 <see cref="TryFillAsync" /> 不传令牌同一取舍);此时取消,调用方立即得到
+    /// <see cref="OperationCanceledException" />、不陪着等写完,帧在后台照样写完整 ——
+    /// 于是对端<b>仍会收到并执行</b>这条请求,与执行操作「请求帧不随调用方取消」是同一口径。
+    /// </para>
+    /// <para>
+    /// 写入中途失败(管道断开、流被释放)时不知道对端收到了多少字节,连接即作废:
+    /// 先置坏帧标记挡住排在后面的写入,再失败全部在途请求、触发 <see cref="Disconnected" /> 并释放连接。
+    /// 唯一能打断一次已开始的帧写入的是释放连接(<see cref="DisposeAsync" /> 释放底层流)。
+    /// 排队等写闸的调用同时听连接寿命:连接关了就以 <see cref="ObjectDisposedException" /> 退出,不会永远挂着。
+    /// </para>
+    /// </remarks>
     private async Task WriteAsync(RpcMessage message, CancellationToken cancellationToken)
     {
-        ObjectDisposedException.ThrowIf(_disposed != 0, this);
+        ObjectDisposedException.ThrowIf(_disposed != 0 || Volatile.Read(ref _writeBroken) != 0, this);
         byte[] body = JsonSerializer.SerializeToUtf8Bytes(message, JsonOptions);
         byte[] header = new byte[4];
         BinaryPrimitives.WriteInt32LittleEndian(header, body.Length);
-        await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await EnterWriteGateAsync(cancellationToken).ConfigureAwait(false);
+        Task frame = WriteFrameAsync(header, body);
+        if (!cancellationToken.CanBeCanceled || frame.IsCompleted)
+        {
+            await frame.ConfigureAwait(false);
+            return;
+        }
         try
         {
-            await _stream.WriteAsync(header, cancellationToken).ConfigureAwait(false);
-            await _stream.WriteAsync(body, cancellationToken).ConfigureAwait(false);
-            await _stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            await frame.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // 调用方不等了,帧照样写完;写失败由 WriteFrameAsync 自己作废连接,这里只把它的异常观察掉。
+            _ = frame.ContinueWith(static task => _ = task.Exception, CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 排队拿写闸。调用方取消照常生效(此时一个字节都还没写);连接关闭同样能把排队者放出来 ——
+    /// <see cref="SemaphoreSlim.Dispose()" /> 不会唤醒已经在等的异步等待者,不听连接寿命的话它们会永远挂着。
+    /// </summary>
+    private async Task EnterWriteGateAsync(CancellationToken cancellationToken)
+    {
+        CancellationToken lifetime;
+        try
+        {
+            lifetime = _lifetime.Token;
+        }
+        catch (ObjectDisposedException)
+        {
+            throw new ObjectDisposedException(nameof(RpcConnection), "RPC connection closed.");
+        }
+        using CancellationTokenSource? linked = cancellationToken.CanBeCanceled
+            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetime)
+            : null;
+        try
+        {
+            await _writeGate.WaitAsync(linked?.Token ?? lifetime).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // 排队期间连接关了:与「发送即失败」同一语义,调用方只需处理断连。
+            throw new ObjectDisposedException(nameof(RpcConnection), "RPC connection closed.");
+        }
+    }
+
+    /// <summary>持有写闸写完整帧并释放写闸;调用前必须已拿到写闸。</summary>
+    private async Task WriteFrameAsync(byte[] header, byte[] body)
+    {
+        try
+        {
+            // 前面有一帧写坏了:后面的帧一个字节都不能再写,否则对端可能把错位的字节读成一条「合法」消息。
+            if (Volatile.Read(ref _writeBroken) != 0)
+            {
+                throw new ObjectDisposedException(nameof(RpcConnection), "RPC connection closed.");
+            }
+            try
+            {
+                await _stream.WriteAsync(header, CancellationToken.None).ConfigureAwait(false);
+                await _stream.WriteAsync(body, CancellationToken.None).ConfigureAwait(false);
+                await _stream.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch
+            {
+                // 坏帧标记在放开写闸之前置上,排在后面的写入因此一定看得到它。
+                if (Interlocked.Exchange(ref _writeBroken, 1) == 0)
+                {
+                    _ = Task.Run(AbandonAfterBrokenWriteAsync);
+                }
+                throw;
+            }
         }
         finally
         {
-            _writeGate.Release();
+            try
+            {
+                _writeGate.Release();
+            }
+            catch (ObjectDisposedException)
+            {
+                // 连接已经释放(释放可能先于这里完成),写闸跟着没了。
+            }
+        }
+    }
+
+    /// <summary>
+    /// 写坏一帧之后作废连接。放在写闸之外做:<see cref="Disconnected" /> 的处理器里若再发消息,
+    /// 在写闸里同步触发它就是自己等自己。
+    /// </summary>
+    private async Task AbandonAfterBrokenWriteAsync()
+    {
+        FailPendingAndNotify();
+        try
+        {
+            await DisposeAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            // 收尾尽力而为;连接已经标坏,不会再有帧写出去。
         }
     }
 

@@ -13,8 +13,21 @@ namespace VelaShell.PluginSdk.Testing;
 /// </summary>
 public sealed class RecordingWorkspaces : IWorkspacesApi
 {
-    private readonly Dictionary<string, (WorkspaceDescriptor Descriptor, IWorkspaceProvider Provider)> _registered =
-        [with(StringComparer.Ordinal)];
+    /// <summary>
+    /// 一条记录下来的注册。
+    /// <para>
+    /// 刻意是 class 而不是元组或 record:注销按**这一条注册**的引用身份判定,而元组与 record 都是值相等 ——
+    /// 同一个提供方带着同一份描述重注册,两条会被当成"同一条"。
+    /// </para>
+    /// </summary>
+    private sealed class Entry(WorkspaceDescriptor descriptor, IWorkspaceProvider provider)
+    {
+        public WorkspaceDescriptor Descriptor { get; } = descriptor;
+
+        public IWorkspaceProvider Provider { get; } = provider;
+    }
+
+    private readonly Dictionary<string, Entry> _registered = [with(StringComparer.Ordinal)];
 
     /// <summary>默认构造(插件 id 为 <c>test.plugin</c>)。</summary>
     public RecordingWorkspaces()
@@ -35,17 +48,13 @@ public sealed class RecordingWorkspaces : IWorkspacesApi
     /// <param name="workspaceId">连接类型 id。</param>
     /// <returns>提供方,或 null。</returns>
     public IWorkspaceProvider? GetProvider(string workspaceId) =>
-        _registered.TryGetValue(workspaceId, out (WorkspaceDescriptor Descriptor, IWorkspaceProvider Provider) entry)
-            ? entry.Provider
-            : null;
+        _registered.TryGetValue(workspaceId, out Entry? entry) ? entry.Provider : null;
 
     /// <summary>按 id 取回注册的描述;未注册时返回 <see langword="null" />。</summary>
     /// <param name="workspaceId">连接类型 id。</param>
     /// <returns>描述,或 null。</returns>
     public WorkspaceDescriptor? GetDescriptor(string workspaceId) =>
-        _registered.TryGetValue(workspaceId, out (WorkspaceDescriptor Descriptor, IWorkspaceProvider Provider) entry)
-            ? entry.Descriptor
-            : null;
+        _registered.TryGetValue(workspaceId, out Entry? entry) ? entry.Descriptor : null;
 
     /// <inheritdoc />
     public IDisposable Register(WorkspaceDescriptor descriptor, IWorkspaceProvider provider)
@@ -70,8 +79,9 @@ public sealed class RecordingWorkspaces : IWorkspacesApi
                 $"Workspace '{descriptor.Id}' points TrustedThumbprintSettingKey at '{key}', which is not one of its fields.",
                 nameof(descriptor));
         }
-        _registered[descriptor.Id] = (descriptor, provider);
-        return new Registration(this, descriptor.Id, provider);
+        var entry = new Entry(descriptor, provider);
+        _registered[descriptor.Id] = entry;
+        return new Registration(this, descriptor.Id, entry);
     }
 
     /// <summary>收到的连接提议(按顺序)。测试据此验证探测流程提议了什么。</summary>
@@ -104,16 +114,20 @@ public sealed class RecordingWorkspaces : IWorkspacesApi
         return Task.FromResult(ProposalAccepted);
     }
 
-    private sealed class Registration(RecordingWorkspaces owner, string id, IWorkspaceProvider provider) : IDisposable
+    private sealed class Registration(RecordingWorkspaces owner, string id, Entry entry) : IDisposable
     {
         /// <summary>
-        /// 与宿主同口径:同 id 被后来者替换过时,旧句柄是**空操作**。
-        /// 盲删会让"注册 A、注册 B、释放 A 的句柄"在单测里删掉 B,而真机上 B 还活着。
+        /// 与宿主(<c>PluginProtocolRegistry</c>)同口径:按**注册条目**判定,同 id 被后来者替换过时,
+        /// 旧句柄是**空操作** —— 哪怕后来者用的是同一个提供方实例。
+        /// <para>
+        /// 盲删会让"注册 A、注册 B、释放 A 的句柄"在单测里删掉 B,而真机上 B 还活着;
+        /// 按提供方实例判定则会让"同一个实例重注册(换语言时刷新文案)、再释放旧句柄"
+        /// 把新注册撤掉,而真机上新注册还在。
+        /// </para>
         /// </summary>
         public void Dispose()
         {
-            if (owner._registered.TryGetValue(id, out (WorkspaceDescriptor Descriptor, IWorkspaceProvider Provider) current)
-                && ReferenceEquals(current.Provider, provider))
+            if (owner._registered.TryGetValue(id, out Entry? current) && ReferenceEquals(current, entry))
             {
                 owner._registered.Remove(id);
             }

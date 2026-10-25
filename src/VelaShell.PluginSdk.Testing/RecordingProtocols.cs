@@ -13,11 +13,20 @@ namespace VelaShell.PluginSdk.Testing;
 /// </summary>
 public sealed class RecordingProtocols : IProtocolsApi
 {
-    /// <summary>一条记录下来的注册(文件与终端二选一)。</summary>
-    private sealed record Entry(ProtocolDescriptor Descriptor, IProtocolFileSystem? FileSystem, IProtocolTerminal? Terminal)
+    /// <summary>
+    /// 一条记录下来的注册(文件与终端二选一)。
+    /// <para>
+    /// 刻意是 class 而不是 record:注销按**这一条注册**的引用身份判定,而 record 的相等是值相等 ——
+    /// 同一个实例带着同一份描述重注册,两条 record 会被当成"同一条"。
+    /// </para>
+    /// </summary>
+    private sealed class Entry(ProtocolDescriptor descriptor, IProtocolFileSystem? fileSystem, IProtocolTerminal? terminal)
     {
-        /// <summary>注销时用于判定"这条还是不是自己那一份"的实现实例。</summary>
-        public object Implementation => (object?)FileSystem ?? Terminal!;
+        public ProtocolDescriptor Descriptor { get; } = descriptor;
+
+        public IProtocolFileSystem? FileSystem { get; } = fileSystem;
+
+        public IProtocolTerminal? Terminal { get; } = terminal;
     }
 
     private readonly Dictionary<string, Entry> _registered = [with(StringComparer.Ordinal)];
@@ -93,19 +102,23 @@ public sealed class RecordingProtocols : IProtocolsApi
         }
         var entry = new Entry(descriptor, fileSystem, terminal);
         _registered[descriptor.Id] = entry;
-        return new Registration(this, descriptor.Id, entry.Implementation);
+        return new Registration(this, descriptor.Id, entry);
     }
 
-    private sealed class Registration(RecordingProtocols owner, string id, object implementation) : IDisposable
+    private sealed class Registration(RecordingProtocols owner, string id, Entry entry) : IDisposable
     {
         /// <summary>
-        /// 与宿主同口径:同 id 被后来者替换过时,旧句柄是**空操作**。
-        /// 盲删会让"注册 A、注册 B、释放 A 的句柄"在单测里删掉 B,而真机上 B 还活着。
+        /// 与宿主(<c>PluginProtocolRegistry</c>)同口径:按**注册条目**判定,同 id 被后来者替换过时,
+        /// 旧句柄是**空操作** —— 哪怕后来者用的是同一个实现实例。
+        /// <para>
+        /// 盲删会让"注册 A、注册 B、释放 A 的句柄"在单测里删掉 B,而真机上 B 还活着;
+        /// 按实现实例判定则会让"同一个实例重注册(换语言时刷新文案)、再释放旧句柄"
+        /// 把新注册撤掉,而真机上新注册还在。
+        /// </para>
         /// </summary>
         public void Dispose()
         {
-            if (owner._registered.TryGetValue(id, out Entry? current)
-                && ReferenceEquals(current.Implementation, implementation))
+            if (owner._registered.TryGetValue(id, out Entry? current) && ReferenceEquals(current, entry))
             {
                 owner._registered.Remove(id);
             }

@@ -89,6 +89,12 @@ public readonly record struct ProtocolSessionStateChange(string SessionId, Proto
 /// 纪律:全部方法都可能被并发调用(浏览器与传输队列各跑各的),实现须自行保证线程安全;
 /// 进度回调可以放心地高频上报 —— 宿主侧已按 ≥100ms 节流并做了单调收敛。
 /// </para>
+/// <para>
+/// 可选能力不在这个接口上,而是实现类<b>兼实现</b>的独立接口 —— 宿主按 <c>is</c> 问得到就用、问不到就如实报不支持:
+/// <see cref="IProtocolStreamUpload" />(从流上传)、<see cref="IProtocolLastWriteTime" />(改修改时间)、
+/// <see cref="IProtocolChecksum" />(服务器端摘要)。符号链接不是单独的一面:列目录 / stat 的条目上如实填
+/// <see cref="RemoteFileEntry.IsSymbolicLink" /> 与 <see cref="RemoteFileEntry.LinkTarget" /> 即可。
+/// </para>
 /// </summary>
 public interface IProtocolFileSystem
 {

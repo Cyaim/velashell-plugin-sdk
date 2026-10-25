@@ -212,6 +212,13 @@ public static class PluginRpc
     /// <summary>关闭嵌入面板(插件 → 宿主,程序性)。</summary>
     public const string UiClosePanel = "ui/close";
 
+    /// <summary>
+    /// 往消息中心发一条消息(插件 → 宿主请求,载荷 <see cref="UiNotifyRequest" />,应答 <see cref="UiNotifyResponse" />)。
+    /// 发送方插件身份由连接绑定;握手未宣告 <see cref="HandshakeResponse.SupportsNotifications" /> 时 PluginHost 不发这条。
+    /// 可用版本:TBD(发版时替换)。
+    /// </summary>
+    public const string UiNotify = "ui/notify";
+
     // 注:界面不走 RPC —— 隔离插件的 UI 由其进程内自带的 Avalonia 直接呈现
     // (PluginHost 内建派发循环),原生控件无需也无法跨进程传输。
 
@@ -278,6 +285,9 @@ public sealed record HandshakeResponse(int ApiLevel, string HostVersion, string 
 
     /// <summary>支持独立下载任务;缺席即不支持,不可回退长 RPC。</summary>
     public bool SupportsDownloadOperations { get; init; }
+
+    /// <summary>支持 <see cref="PluginRpc.UiNotify" />(插件往消息中心发消息);缺席即旧宿主,不支持。可用版本:TBD(发版时替换)。</summary>
+    public bool SupportsNotifications { get; init; }
 }
 
 /// <summary>会话查询参数。</summary>
@@ -487,3 +497,9 @@ public sealed record UiEmbedResponse(string PanelId);
 
 /// <summary>面板 id 载荷。</summary>
 public sealed record UiPanelRef(string PanelId);
+
+/// <summary>发消息请求载荷;没有「以谁的名义」字段,发送方身份由连接绑定。</summary>
+public sealed record UiNotifyRequest(Ui.PluginNotification Notification);
+
+/// <summary>发消息应答载荷。</summary>
+public sealed record UiNotifyResponse(Ui.PluginNotificationOutcome Outcome);

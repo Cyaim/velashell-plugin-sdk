@@ -156,4 +156,46 @@ public interface IUiApi
     /// 插件停用时其全部面板由宿主自动关闭。
     /// </summary>
     Task<IPluginPanel> ShowPanelAsync(PanelOptions options, Func<object> contentFactory, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 宿主是否实现了 <see cref="PostNotificationAsync" />;旧宿主默认 <see langword="false" />。
+    /// 为 false 时不要退回别的打扰渠道(弹窗、开面板)去补 —— 发不了就只写日志。
+    /// <para>可用版本:TBD(发版时替换)。</para>
+    /// </summary>
+    bool SupportsNotifications => false;
+
+    /// <summary>
+    /// 往宿主的消息中心(侧边栏铃铛)发一条<b>要留存、可回看</b>的消息。边界与写法见 <see cref="PluginNotification" />。
+    /// <para>
+    /// 约定(宿主实现须遵守,插件可以依赖):
+    /// <list type="bullet">
+    ///   <item><b>身份由宿主绑定</b>:消息记在调用方插件名下,列表里标出插件名;消息里没有、也不接受「以谁的名义」。
+    ///   宿主用 <see cref="PluginNotification.Validate" /> 校验,不合格抛 <see cref="ArgumentException" />。</item>
+    ///   <item><b>先去重、后限频</b>:同 <see cref="PluginNotification.Id" /> 已在列表里时返回
+    ///   <see cref="PluginNotificationOutcome.AlreadyPosted" />,不计入频率。</item>
+    ///   <item><b>频率限制</b>:每插件每分钟最多 6 条<b>新</b>消息(插件系统蓝图 07 §7 的应用内通知频控),
+    ///   超出返回 <see cref="PluginNotificationOutcome.RateLimited" />、不抛异常。宿主可以收得更紧,
+    ///   插件不要贴着上限发:正常的插件一天也发不了几条。同类事件请合并成一条摘要。</item>
+    ///   <item>用户可以在插件管理页关掉某个插件的通知,此时返回 <see cref="PluginNotificationOutcome.Muted" />。</item>
+    ///   <item>消息跨重启留存,与其它消息一样受消息中心的总量上限约束(旧的会被淘汰);插件卸载时宿主删掉它发的全部消息。
+    ///   插件不能改写或撤回已发的消息 —— 发之前想清楚值不值得留。</item>
+    ///   <item>标题、正文按纯文本显示,超出 <see cref="PluginNotification.MaxTitleLength" /> /
+    ///   <see cref="PluginNotification.MaxBodyLength" /> 截断。</item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// 权限:应用内消息随普通权限 <c>ui.contributions</c>(安装即授予),不需要另行申请;
+    /// 这不是操作系统通知(那是另一项权限 <c>notifications.system</c>,本方法不涉及)。
+    /// 任意线程可调;令牌只取消这一次请求,不撤回已经入列的消息。
+    /// </para>
+    /// <para>可用版本:TBD(发版时替换)。隔离进程经 <c>ui/notify</c> 转发,握手未宣告支持时在插件进程内直接抛不支持。</para>
+    /// </summary>
+    /// <param name="notification">要发的消息。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>这条消息的去向。</returns>
+    /// <exception cref="NotSupportedException">宿主没有实现插件通知(见 <see cref="SupportsNotifications" />)。</exception>
+    /// <exception cref="ArgumentException">消息不合格(见 <see cref="PluginNotification.Validate" />)。</exception>
+    Task<PluginNotificationOutcome> PostNotificationAsync(PluginNotification notification,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("This host does not implement plugin notifications.");
 }
