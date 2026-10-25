@@ -66,6 +66,13 @@ public static class RpcErrorCodes
     /// <summary>操作已取消,不是执行超时。</summary>
     public const string Cancelled = "cancelled";
 
+    /// <summary>
+    /// 传输在登记任务之前就被宿主明确拒绝(<see cref="PluginTransferRejectedException" />)。
+    /// 线上带原因后缀:<c>transfer-rejected:source-in-use</c>;不带后缀或后缀不认识时还原成
+    /// <see cref="RemoteFs.RemoteTransferRejectReason.Unknown" />,类型照样是「启动前被拒」。可用版本:TBD(发版时替换)。
+    /// </summary>
+    public const string TransferRejected = "transfer-rejected";
+
     /// <summary>未分类错误。</summary>
     public const string Unknown = "error";
 
@@ -76,6 +83,8 @@ public static class RpcErrorCodes
         PluginSessionNotFoundException => SessionNotFound,
         // 必须排在 InvalidOperationException 之前:它是后者的子类,顺序反了就永远命中不到
         PluginSessionOpenException => SessionOpenFailed,
+        // 同上(InvalidOperationException 的子类)
+        PluginTransferRejectedException rejected => TransferRejectedCode(rejected.Reason),
         TimeoutException => Timeout,
         OperationCanceledException => Cancelled,
         NotSupportedException => NotSupported,
@@ -95,7 +104,33 @@ public static class RpcErrorCodes
         NotSupported => new NotSupportedException(message),
         BadArguments => new ArgumentException(message),
         InvalidOperation => new InvalidOperationException(message),
+        TransferRejected => new PluginTransferRejectedException(RemoteFs.RemoteTransferRejectReason.Unknown, message),
+        _ when code?.StartsWith(TransferRejected + ":", StringComparison.Ordinal) == true
+            => new PluginTransferRejectedException(ParseRejectReason(code[(TransferRejected.Length + 1)..]), message),
         _ => new RpcRemoteException(code ?? Unknown, message)
+    };
+
+    /// <summary>「启动前被拒」的线上码:原因按短横线名接在 <c>:</c> 后面,未知原因不带后缀。</summary>
+    private static string TransferRejectedCode(RemoteFs.RemoteTransferRejectReason reason) =>
+        RejectReasonToken(reason) is { } token ? $"{TransferRejected}:{token}" : TransferRejected;
+
+    private static string? RejectReasonToken(RemoteFs.RemoteTransferRejectReason reason) => reason switch
+    {
+        RemoteFs.RemoteTransferRejectReason.SourceNotFound => "source-not-found",
+        RemoteFs.RemoteTransferRejectReason.SourceInUse => "source-in-use",
+        RemoteFs.RemoteTransferRejectReason.QuotaExceeded => "quota-exceeded",
+        RemoteFs.RemoteTransferRejectReason.InsufficientSpace => "insufficient-space",
+        _ => null
+    };
+
+    /// <summary>线上名 → 原因;不认识的(更新的对端加了新原因)一律 Unknown,不报错。</summary>
+    private static RemoteFs.RemoteTransferRejectReason ParseRejectReason(string token) => token switch
+    {
+        "source-not-found" => RemoteFs.RemoteTransferRejectReason.SourceNotFound,
+        "source-in-use" => RemoteFs.RemoteTransferRejectReason.SourceInUse,
+        "quota-exceeded" => RemoteFs.RemoteTransferRejectReason.QuotaExceeded,
+        "insufficient-space" => RemoteFs.RemoteTransferRejectReason.InsufficientSpace,
+        _ => RemoteFs.RemoteTransferRejectReason.Unknown
     };
 }
 

@@ -90,6 +90,10 @@ public interface IRemoteFsApi
     /// 不能回收后以同一 id 重执行;额度满应拒绝新任务。
     /// 相同 id 参数冲突抛 InvalidOperationException;无效或不属于本插件的 id 统一抛 FileNotFoundException。
     /// </remarks>
+    /// <exception cref="PluginTransferRejectedException">
+    /// 登记之前就被宿主明确拒绝(源被占用、已删除、额度满、本机空间不足):什么都没开始、回执未登记,
+    /// 与「结果未知」「用户拒绝」处置不同,见该类型说明。可用版本:TBD(发版时替换)。
+    /// </exception>
     Task<RemoteTransferSnapshot> StartUploadAsync(string sessionId, string localPath, string remotePath,
         RemoteUploadOptions options, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("This host does not implement transfer operations.");
@@ -105,6 +109,7 @@ public interface IRemoteFsApi
     /// 与活动任务失效并请求取消,提交前重新校验。默认 Overwrite=false 必须使用宿主临时文件和原子无替换提交,
     /// 不能只做预先存在性检查或先删除目标。无支持时明确抛 NotSupportedException,不退回 DownloadFileAsync。
     /// </remarks>
+    /// <exception cref="PluginTransferRejectedException">登记之前就被宿主明确拒绝,见该类型说明。可用版本:TBD(发版时替换)。</exception>
     Task<RemoteTransferSnapshot> StartDownloadAsync(string sessionId, string remotePath, string localPath,
         RemoteDownloadOptions options, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("This host does not implement download transfer operations.");
