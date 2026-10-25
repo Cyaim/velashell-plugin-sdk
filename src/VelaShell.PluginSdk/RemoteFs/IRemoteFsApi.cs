@@ -69,6 +69,13 @@ public interface IRemoteFsApi
     /// <summary>宿主是否实现独立下载任务;旧宿主默认不支持,不可退回长时间同步调用。</summary>
     bool SupportsDownloadOperations => false;
 
+    /// <summary>
+    /// 宿主是否实现 <see cref="WithdrawPendingTransferAsync" />(只撤批准还没生效的传输);旧宿主默认不支持。
+    /// 与上传、下载能力各自独立:实现了独立任务的宿主不一定实现它。
+    /// <para>可用版本:TBD(发版时替换)。</para>
+    /// </summary>
+    bool SupportsTransferWithdraw => false;
+
     /// <summary>一次进度等待的最大秒数;等待可重复,不代表传输执行死线。</summary>
     public const int MaxTransferWaitSeconds = 30;
 
@@ -133,9 +140,50 @@ public interface IRemoteFsApi
     /// 无法确认则标 Unknown;用户目标不会因取消而被宣称已回滚。
     /// expectedGeneration 必须为正且等于当前执行代次;旧代次取消抛 InvalidOperationException,
     /// 绝不停止恢复后的新代次。相同代次的重复取消幂等。
+    /// 这是无条件的取消:已经批准、正在传的也停。只想撤「还没批准」的,用 <see cref="WithdrawPendingTransferAsync" />。
     /// </summary>
     Task<RemoteTransferSnapshot> CancelTransferAsync(string transferId, long expectedGeneration, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("This host does not implement transfer operations.");
+
+    /// <summary>
+    /// 条件取消:只在这一代的宿主批准<b>还没生效</b>时撤下传输,批准已经生效的什么都不动。
+    /// 与「先 <see cref="GetTransferAsync" /> 看到 <see cref="RemoteTransferPhase.Approval" />、再
+    /// <see cref="CancelTransferAsync" />」不同,判断与撤下在宿主那边是同一步 —— 中间没有一个往返的空当,
+    /// 不会出现宿主恰在这时批准、刚批准的又被撤掉。
+    /// </summary>
+    /// <param name="transferId">所属插件的任务 id。</param>
+    /// <param name="expectedGeneration">
+    /// 期望的执行代次,必须为正且等于当前代次;不符抛 <see cref="InvalidOperationException" />。
+    /// 恢复产生的新代次要重新批准,旧代次的撤回碰不到它。
+    /// </param>
+    /// <param name="cancellationToken">只取消本次请求的等待;宿主已经登记的撤回不回滚。</param>
+    /// <returns>结论与调用之后的权威快照,结论的划分见 <see cref="RemoteTransferWithdrawOutcome" />。</returns>
+    /// <remarks>
+    /// <para>
+    /// 宿主把「批准生效」与「条件撤回」放在同一个串行点上判定,先到者赢。批准先生效:返回
+    /// <see cref="RemoteTransferWithdrawOutcome.PastApproval" />,任务照常进行。撤回先到:返回
+    /// <see cref="RemoteTransferWithdrawOutcome.Withdrawn" />,宿主登记取消意图,已弹出的确认框关掉、排在确认闸后面的不再弹,
+    /// 随后到达的批准作废;这一代什么都不读、什么都不写,以 <see cref="RemoteTransferState.Cancelled" /> 收尾,
+    /// <see cref="RemoteTransferSnapshot.RemoteStopConfirmed" /> 为 true。实现它的宿主在批准生效的同一步把
+    /// <see cref="RemoteTransferSnapshot.Phase" /> 移出 <see cref="RemoteTransferPhase.Approval" />(上传与下载同一口径),
+    /// 所以快照里的 Approval 就等于「批准还没生效」。
+    /// </para>
+    /// <para>
+    /// 幂等:同一代次重复调用得到同一结论,回执丢了就原样再调一次(或 <see cref="GetTransferAsync" />)。
+    /// 无效或不属于本插件的 id 与其它任务方法一样抛 <see cref="System.IO.FileNotFoundException" />;
+    /// 权限撤销之后与 <see cref="CancelTransferAsync" /> 一样仍可用于清理,快照按撤权口径脱敏。
+    /// </para>
+    /// <para>
+    /// 不支持的宿主(<see cref="SupportsTransferWithdraw" /> 为 false)明确抛 <see cref="NotSupportedException" />,
+    /// <b>不</b>退化成无条件的 <see cref="CancelTransferAsync" />。插件在这样的宿主上要么照旧「先取快照、按代次取消」并接受
+    /// 那一个往返的空当,要么不撤、让确认框照弹 —— 选哪条是插件的取舍。契约程序集由宿主提供:装着更旧 SDK 的宿主上
+    /// 连这个成员都不存在,用到它的插件要声明对应的 <c>minSdkVersion</c>。
+    /// </para>
+    /// <para>可用版本:TBD(发版时替换)。只增不改,<c>apiLevel</c> 不变。</para>
+    /// </remarks>
+    Task<RemoteTransferWithdrawResult> WithdrawPendingTransferAsync(string transferId, long expectedGeneration,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("This host does not implement conditional transfer withdrawal.");
 
     /// <summary>
     /// 显式恢复可恢复的终态任务,保持 transferId 与递增 Sequence;须重新审批及校验授权。

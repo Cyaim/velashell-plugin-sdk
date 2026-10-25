@@ -14,7 +14,14 @@ public enum RemoteTransferPhase
 {
     /// <summary>阶段未知(旧宿主或尚未报告)。</summary>
     Unknown = 0,
-    /// <summary>等待或执行宿主审批。</summary>
+    /// <summary>
+    /// 等待或执行宿主审批。
+    /// <para>
+    /// 宣告 <see cref="IRemoteFsApi.SupportsTransferWithdraw" /> 的宿主在批准生效的<b>同一步</b>把任务移出这一阶段
+    /// (上传与下载同一口径,批准之后等传输槽的也不再报 Approval),所以这样的宿主报 Approval 就等于「这一代的批准还没生效」。
+    /// 可用版本:TBD(发版时替换)。
+    /// </para>
+    /// </summary>
     Approval,
     /// <summary>正在流式传输。</summary>
     Transfer,
@@ -45,6 +52,59 @@ public enum RemoteTransferRejectReason
 
     /// <summary>宿主在本机准备快照或临时文件所需的空间不足。</summary>
     InsufficientSpace = 4
+}
+
+/// <summary>
+/// <see cref="IRemoteFsApi.WithdrawPendingTransferAsync" /> 的结论。数值显式给出并且<b>只增不改</b>(线上按数值传)。
+/// <para>
+/// 三种已知结论按宿主记下的两件事互斥划分:这一代的批准生效了没有;批准生效之前有没有登记过取消。
+/// 批准已生效 → <see cref="PastApproval" />;否则登记过取消 → <see cref="Withdrawn" />;
+/// 否则已经收尾 → <see cref="AlreadyEnded" />;否则本次调用登记取消 → <see cref="Withdrawn" />。
+/// </para>
+/// <para>可用版本:TBD(发版时替换)。</para>
+/// </summary>
+public enum RemoteTransferWithdrawOutcome
+{
+    /// <summary>
+    /// 宿主没有给出结论,或给了本 SDK 不认识的值(更新的宿主)。<b>不要</b>当成已撤下,也不要据此改发无条件取消:
+    /// 接着按快照观察到终态。
+    /// </summary>
+    Unknown = 0,
+
+    /// <summary>
+    /// 撤下了:这一代在批准生效<b>之前</b>已登记取消意图 —— 本次调用、先前的撤回、或批准前的
+    /// <see cref="IRemoteFsApi.CancelTransferAsync" /> 都算。这一代不会再被批准,什么都不读、什么都不写,
+    /// 以 <see cref="RemoteTransferState.Cancelled" /> 收尾;返回时可能还是 CancelRequested,照常观察到终态。
+    /// </summary>
+    Withdrawn = 1,
+
+    /// <summary>
+    /// 批准已经生效(含批准之后已到终态的),本次调用什么都没改。这是用户点过头的传输,照常进行;
+    /// 真要停它是另一个决定,用 <see cref="IRemoteFsApi.CancelTransferAsync" />。
+    /// </summary>
+    PastApproval = 2,
+
+    /// <summary>
+    /// 这一代在批准生效之前就因为别的原因收尾了(确认框里被拒、源不见了、断线、到期、撤权……),本次调用什么都没改。
+    /// 与 <see cref="Withdrawn" /> 一样什么都没传,但不是撤下的:原因看快照的 State 与 ErrorCode。
+    /// </summary>
+    AlreadyEnded = 3
+}
+
+/// <summary>
+/// 条件撤回的结果:结论与调用之后的权威快照。也是隔离进程 <c>fs/transfer/withdraw</c> 的应答载荷。
+/// <para>可用版本:TBD(发版时替换)。</para>
+/// </summary>
+public sealed record RemoteTransferWithdrawResult
+{
+    /// <summary>结论;缺失时为 <see cref="RemoteTransferWithdrawOutcome.Unknown" />。</summary>
+    public RemoteTransferWithdrawOutcome Outcome { get; init; }
+
+    /// <summary>调用之后的权威快照;权限撤销之后按撤权口径脱敏(与 CancelTransferAsync 相同)。</summary>
+    public required RemoteTransferSnapshot Snapshot { get; init; }
+
+    /// <summary>只有 <see cref="RemoteTransferWithdrawOutcome.Withdrawn" /> 才算撤下了;Unknown 与不认识的值一律不算。</summary>
+    public bool IsWithdrawn => Outcome == RemoteTransferWithdrawOutcome.Withdrawn;
 }
 
 /// <summary>独立上传任务状态;缺失状态按 Unknown 处理,绝不默认成功。</summary>

@@ -92,6 +92,14 @@ public static class PluginRpc
     /// <summary>显式恢复已确认停止且可恢复的传输。</summary>
     public const string FsTransferResume = "fs/transfer/resume";
 
+    /// <summary>
+    /// 条件撤回:只在这一代的批准还没生效时撤下传输(载荷 <see cref="FsTransferWithdrawRequest" />,
+    /// 应答 <see cref="RemoteFs.RemoteTransferWithdrawResult" />)。握手未宣告
+    /// <see cref="HandshakeResponse.SupportsTransferWithdraw" /> 时 PluginHost 不发这条,在插件进程内直接抛不支持,
+    /// 也不改发 <see cref="FsTransferCancel" />。可用版本:TBD(发版时替换)。
+    /// </summary>
+    public const string FsTransferWithdraw = "fs/transfer/withdraw";
+
     /// <summary>独立传输的快照通知(宿主 → 插件);丢帧后通过 get/wait 重取权威快照。</summary>
     public const string FsTransferProgress = "fs/transfer/progress";
 
@@ -288,6 +296,12 @@ public sealed record HandshakeResponse(int ApiLevel, string HostVersion, string 
 
     /// <summary>支持 <see cref="PluginRpc.UiNotify" />(插件往消息中心发消息);缺席即旧宿主,不支持。可用版本:2.1.3。</summary>
     public bool SupportsNotifications { get; init; }
+
+    /// <summary>
+    /// 支持 <see cref="PluginRpc.FsTransferWithdraw" />(只撤批准还没生效的传输);缺席即旧宿主,不支持,
+    /// 不可退化成无条件取消。可用版本:TBD(发版时替换)。
+    /// </summary>
+    public bool SupportsTransferWithdraw { get; init; }
 }
 
 /// <summary>会话查询参数。</summary>
@@ -370,6 +384,12 @@ public sealed record FsTransferRef(string TransferId);
 
 /// <summary>当前执行代次的传输引用;旧代次取消不能作用于恢复后的新代次。</summary>
 public sealed record FsTransferCancelRequest(string TransferId, long ExpectedGeneration);
+
+/// <summary>
+/// 条件撤回请求:只在这一代的批准还没生效时撤下,判断与撤下由宿主在同一步完成;旧代次撤回不能作用于恢复后的新代次。
+/// 可用版本:TBD(发版时替换)。
+/// </summary>
+public sealed record FsTransferWithdrawRequest(string TransferId, long ExpectedGeneration);
 
 /// <summary>等待快照版本变化;WaitSeconds 在 0 到 IRemoteFsApi.MaxTransferWaitSeconds 之间。</summary>
 public sealed record FsTransferWaitRequest(string TransferId, long AfterSequence, double WaitSeconds);
