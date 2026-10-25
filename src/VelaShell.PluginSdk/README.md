@@ -11,7 +11,7 @@
 | `IVelaPlugin.cs` `IPluginContext.cs` `VelaPluginAttribute.cs` | 插件入口契约与激活/停用生命周期。 |
 | `VelaPluginApi.cs` | `apiLevel` 版本常量（当前 = **2**）。 |
 | `Sessions/` `RemoteFs/` `RemoteExec/` `Terminal/` | 远程侧能力：会话枚举与打开已保存的会话、远程文件读写、远程命令执行、终端读写。 |
-| `Commands/` `Ui/` `Clipboard/` | 宿主侧能力：命令注册、面板/对话框、剪贴板。 |
+| `Commands/` `Ui/` `Clipboard/` | 宿主侧能力：命令注册、面板/对话框与消息中心通知（`PluginNotification`）、剪贴板。 |
 | `Storage/` `Secrets/` `TimeSeries/` | 持久化能力：KV 存储、加密机密、时序数据（含 `TimeSeriesModel` 与写入校验）。 |
 | `Logging/` `Events/` | 插件日志与宿主事件订阅。 |
 | `Manifest/` | `plugin.json` 的模型、读取器与错误类型（`PluginManifest`/`PluginManifestReader`/`PluginManifestException`）。 |

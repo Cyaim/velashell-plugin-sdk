@@ -110,6 +110,7 @@ public sealed class TestPluginContext : IPluginContext, IDisposable
             field = value;
             RecordingProtocols.PluginId = value;
             RecordingWorkspaces.PluginId = value;
+            FakeUi.PluginId = value;
         }
     } = "test.plugin";
 
