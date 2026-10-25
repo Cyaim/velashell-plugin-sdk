@@ -28,7 +28,7 @@ namespace VelaShell.PluginSdk;
 /// 宿主或平台不支持(<see cref="NotSupportedException" />)、会话不在(<see cref="PluginSessionNotFoundException" />)、
 /// 同一 <c>OperationId</c> 参数不符(<see cref="InvalidOperationException" />)、没有授权(<see cref="PluginPermissionDeniedException" />)。
 /// </para>
-/// <para>隔离进程经错误码 <c>transfer-rejected:&lt;原因&gt;</c> 还原成本类型与原因。可用版本:TBD(发版时替换)。</para>
+/// <para>隔离进程经错误码 <c>transfer-rejected:&lt;原因&gt;</c> 还原成本类型与原因。可用版本:2.1.3。</para>
 /// </summary>
 public sealed class PluginTransferRejectedException : InvalidOperationException
 {

@@ -18,6 +18,12 @@ public sealed class FakeRemoteFs : IRemoteFsApi
     /// <summary>显式模拟宿主是否具备独立下载能力;默认否,不退化为同步下载。</summary>
     public bool SupportsDownloadOperations { get; set; }
 
+    /// <summary>
+    /// 显式模拟宿主是否实现条件撤回(<see cref="IRemoteFsApi.WithdrawPendingTransferAsync" />);默认否,
+    /// 不退化成无条件取消。可用版本:TBD(发版时替换)。
+    /// </summary>
+    public bool SupportsTransferWithdraw { get; set; }
+
     /// <summary>独立上传启动脚本;测试自己控制任务生命周期与快照。</summary>
     public Func<string, string, string, RemoteUploadOptions, CancellationToken, Task<RemoteTransferSnapshot>>? StartUploadHandler { get; set; }
 
@@ -51,6 +57,12 @@ public sealed class FakeRemoteFs : IRemoteFsApi
     /// <summary>显式恢复脚本;没有脚本时不从头重传。</summary>
     public Func<string, RemoteTransferResumeOptions, CancellationToken, Task<RemoteTransferSnapshot>>? ResumeTransferHandler { get; set; }
 
+    /// <summary>
+    /// 条件撤回脚本。「批准与撤回先到者赢」由测试自己模拟:替身不编造结论,没有脚本时明确不支持,
+    /// 也不改走 <see cref="CancelTransferHandler" />。可用版本:TBD(发版时替换)。
+    /// </summary>
+    public Func<string, long, CancellationToken, Task<RemoteTransferWithdrawResult>>? WithdrawTransferHandler { get; set; }
+
     /// <summary>已请求的独立上传;不读取本地文件内容。</summary>
     public List<(string SessionId, string LocalPath, string RemotePath, RemoteUploadOptions Options)> UploadsStarted { get; } = [];
 
@@ -68,6 +80,9 @@ public sealed class FakeRemoteFs : IRemoteFsApi
 
     /// <summary>已请求的显式恢复。</summary>
     public List<(string TransferId, RemoteTransferResumeOptions Options)> TransfersResumed { get; } = [];
+
+    /// <summary>已请求的条件撤回(请求过,不代表撤下了;结论看脚本的返回)。</summary>
+    public List<(string TransferId, long ExpectedGeneration)> TransfersWithdrawn { get; } = [];
 
     /// <inheritdoc />
     public Task<RemoteTransferSnapshot> StartUploadAsync(string sessionId, string localPath, string remotePath,
@@ -117,6 +132,18 @@ public sealed class FakeRemoteFs : IRemoteFsApi
         return (SupportsTransferOperations || SupportsDownloadOperations) && CancelTransferHandler is { } handler
             ? handler(transferId, expectedGeneration, cancellationToken)
             : Task.FromException<RemoteTransferSnapshot>(new NotSupportedException("No transfer cancellation handler configured."));
+    }
+
+    /// <inheritdoc />
+    public Task<RemoteTransferWithdrawResult> WithdrawPendingTransferAsync(string transferId, long expectedGeneration,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (expectedGeneration <= 0) throw new ArgumentOutOfRangeException(nameof(expectedGeneration));
+        TransfersWithdrawn.Add((transferId, expectedGeneration));
+        return SupportsTransferWithdraw && WithdrawTransferHandler is { } handler
+            ? handler(transferId, expectedGeneration, cancellationToken)
+            : Task.FromException<RemoteTransferWithdrawResult>(new NotSupportedException("No transfer withdrawal handler configured."));
     }
 
     /// <inheritdoc />

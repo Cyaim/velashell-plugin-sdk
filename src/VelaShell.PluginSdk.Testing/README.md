@@ -14,7 +14,7 @@
 | `InMemoryTimeSeries` | `ITimeSeriesApi`（时序写入与查询）。 |
 | `FakeSessions` | `ISessionsApi`：`AddConnected(...)` 造一条已连接会话，`AddSaved(...)` 造一条已保存配置；`DenyOpen` / `OpenFailure` 模拟「用户点了不」与「连不上」，`LastOpenReason` 用来断言那句给用户看的理由确实传上去了。 |
 | `FakeRemoteExec` | `IRemoteExecApi`：用 `Handler` 委托按命令文本给定输出。 |
-| `FakeRemoteFs` | `IRemoteFsApi`（远程文件读写与列目录）。 |
+| `FakeRemoteFs` | `IRemoteFsApi`（远程文件读写与列目录）。独立传输任务的每个方法都要显式打开能力位（`SupportsTransferOperations` / `SupportsDownloadOperations` / `SupportsTransferWithdraw`）并配上对应的 `*Handler` 才可用，否则明确抛不支持；请求逐条记在 `UploadsStarted` / `TransfersCancelled` / `TransfersWithdrawn` 等列表里。宿主的幂等、审批与「批准与撤回先到者赢」由测试脚本自己模拟，替身不编造结论。 |
 | `FakeTerminal` | `ITerminalApi`（读终端尾部输出、回写终端）。 |
 | `FakeUi` | `IUiApi`（面板与消息中心通知）：`PostedNotifications` 是实际进列表的消息，`NotificationRequests` 是全部投递；与宿主同一套校验与同 id 去重，`NotificationOutcome` 脚本模拟限流 / 静音，`SupportsNotifications = false` 模拟旧宿主。 |
 | `RecordingCommands` | `ICommandsApi`：记录注册的命令，可用 `RunAsync(id)` 直接触发。 |

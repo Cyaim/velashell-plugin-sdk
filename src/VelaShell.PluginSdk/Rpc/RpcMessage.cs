@@ -69,7 +69,7 @@ public static class RpcErrorCodes
     /// <summary>
     /// 传输在登记任务之前就被宿主明确拒绝(<see cref="PluginTransferRejectedException" />)。
     /// 线上带原因后缀:<c>transfer-rejected:source-in-use</c>;不带后缀或后缀不认识时还原成
-    /// <see cref="RemoteFs.RemoteTransferRejectReason.Unknown" />,类型照样是「启动前被拒」。可用版本:TBD(发版时替换)。
+    /// <see cref="RemoteFs.RemoteTransferRejectReason.Unknown" />,类型照样是「启动前被拒」。可用版本:2.1.3。
     /// </summary>
     public const string TransferRejected = "transfer-rejected";
 

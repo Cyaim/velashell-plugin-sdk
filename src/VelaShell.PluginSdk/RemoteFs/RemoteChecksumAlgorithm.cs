@@ -7,7 +7,7 @@ namespace VelaShell.PluginSdk.RemoteFs;
 /// 只收宿主能在本机用 BCL 算出同一种摘要的算法 —— 服务器端摘要的用处是与本地文件比对
 /// (目录同步的「先比 SHA-256」、传输后校验),本地算不出的算法拿回来也没法比。
 /// </para>
-/// <para>可用版本:TBD(发版时替换)。</para>
+/// <para>可用版本:2.1.3。</para>
 /// </summary>
 public enum RemoteChecksumAlgorithm
 {

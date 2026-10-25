@@ -24,5 +24,5 @@ public static class VelaPluginApi
     /// <summary>
     /// 当前 SDK 的语义版本(<c>主.次.修订</c>)。
     /// </summary>
-    public const string SdkVersion = "2.0.9";
+    public const string SdkVersion = "2.1.3";
 }

@@ -37,7 +37,7 @@ namespace VelaShell.PluginSdk.Versioning;
 /// 把 <c>1.1.0-beta</c> 判成「不够 1.1.0」会让预览版宿主装不上正是为它写的插件。
 /// 「哪个更新」(升级提示、从商店挑最新版)用 <see cref="CompareTo" />。
 /// </para>
-/// <para>不是线协 DTO:跨进程、进清单、进商店一律传字符串,两端各自解析。可用版本:TBD(发版时替换)。</para>
+/// <para>不是线协 DTO:跨进程、进清单、进商店一律传字符串,两端各自解析。可用版本:2.1.3。</para>
 /// </summary>
 public readonly struct SemanticVersion : IComparable<SemanticVersion>, IEquatable<SemanticVersion>
 {
