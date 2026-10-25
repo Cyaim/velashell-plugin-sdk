@@ -3,12 +3,20 @@ namespace VelaShell.PluginSdk.RemoteFs;
 /// <summary>远端文件或目录的元数据。</summary>
 /// <param name="Name">名称(不含路径)。</param>
 /// <param name="FullPath">完整远端路径。</param>
-/// <param name="IsDirectory">是否为目录。</param>
+/// <param name="IsDirectory">
+/// 是否为目录。条目是符号链接时描述的是<b>链接指向的对象</b>(指向目录的链接为 true,可以直接进入),
+/// 见 <see cref="IsSymbolicLink" />。
+/// </param>
 /// <param name="Size">大小(字节);目录为 0 或实现定义值。</param>
 /// <param name="LastModified">最后修改时间。</param>
 /// <param name="Permissions">权限字符串(如 <c>rwxr-xr-x</c>)。</param>
 /// <param name="Owner">属主。</param>
 /// <param name="Group">属组。</param>
+/// <remarks>
+/// 链接两个字段(<see cref="IsSymbolicLink" /> / <see cref="LinkTarget" />,可用版本:TBD,发版时替换)
+/// 是 <c>init</c> 属性而不是位置参数:八参构造与 <c>Deconstruct</c> 的签名保持不变,
+/// 老插件、老宿主照旧编译与装载;线上 JSON 缺这两个字段时读成 <see langword="false" /> / <see langword="null" />。
+/// </remarks>
 public sealed record RemoteFileEntry(
     string Name,
     string FullPath,
@@ -17,7 +25,31 @@ public sealed record RemoteFileEntry(
     DateTimeOffset LastModified,
     string Permissions,
     string Owner,
-    string Group);
+    string Group)
+{
+    /// <summary>
+    /// 这个路径<b>本身</b>是否为符号链接(lstat 口径),默认 <see langword="false" />。
+    /// <para>
+    /// 为 true 时 <see cref="IsDirectory" />、<see cref="Size" /> 与 <see cref="LastModified" />
+    /// 描述的是链接指向的对象 —— 浏览照常、指向目录的链接点进去就是目标目录;
+    /// 断链(目标不存在或不可达)保留链接自身的属性,<see cref="IsDirectory" /> 为 false。
+    /// </para>
+    /// <para>
+    /// 消费方据此<b>只处理链接本身</b>:删除删的是链接、不沿链接递归(否则删一个指向目录的链接会删光目标);
+    /// 复制得到链接;递归下载 / 同步不跟进指向目录的链接。实现方没有链接概念(对象存储)时一律保持 false。
+    /// </para>
+    /// <para>可用版本:TBD(发版时替换);老宿主 / 老插件给出的条目恒为 false。</para>
+    /// </summary>
+    public bool IsSymbolicLink { get; init; }
+
+    /// <summary>
+    /// 链接的<b>原始</b>目标文本(readlink 的结果,可能是相对路径,相对链接所在目录解析,与 <c>ln -s</c> 一致)。
+    /// 非链接、或后端给不出目标时为 <see langword="null" />。只用于展示与复制链接,
+    /// 不要拿它自行拼路径去访问 —— 要访问目标直接用条目的 <see cref="FullPath" />(服务器负责跟随)。
+    /// <para>可用版本:TBD(发版时替换)。</para>
+    /// </summary>
+    public string? LinkTarget { get; init; }
+}
 
 /// <summary>文件传输进度。宿主对回调做了节流(≥100ms 一次),回调频率不代表 I/O 频率。</summary>
 /// <param name="TransferredBytes">已传输字节数。</param>
