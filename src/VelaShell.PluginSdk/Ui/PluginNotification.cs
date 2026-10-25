@@ -54,7 +54,7 @@ public enum PluginNotificationOutcome
 /// 刻意<b>没有</b>网址字段:插件不能把用户从消息中心直接导到外部链接。要打开网页、跳到某个界面,
 /// 注册一条自己的命令(<see cref="ActionCommandId" />)在命令里做。
 /// </para>
-/// <para>可用版本:TBD(发版时替换)。</para>
+/// <para>可用版本:2.1.3。</para>
 /// </summary>
 public sealed record PluginNotification
 {

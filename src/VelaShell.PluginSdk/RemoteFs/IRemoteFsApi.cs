@@ -13,7 +13,7 @@ namespace VelaShell.PluginSdk.RemoteFs;
 /// <param name="Owner">属主。</param>
 /// <param name="Group">属组。</param>
 /// <remarks>
-/// 链接两个字段(<see cref="IsSymbolicLink" /> / <see cref="LinkTarget" />,可用版本:TBD,发版时替换)
+/// 链接两个字段(<see cref="IsSymbolicLink" /> / <see cref="LinkTarget" />,可用版本:2.1.3)
 /// 是 <c>init</c> 属性而不是位置参数:八参构造与 <c>Deconstruct</c> 的签名保持不变,
 /// 老插件、老宿主照旧编译与装载;线上 JSON 缺这两个字段时读成 <see langword="false" /> / <see langword="null" />。
 /// </remarks>
@@ -38,7 +38,7 @@ public sealed record RemoteFileEntry(
     /// 消费方据此<b>只处理链接本身</b>:删除删的是链接、不沿链接递归(否则删一个指向目录的链接会删光目标);
     /// 复制得到链接;递归下载 / 同步不跟进指向目录的链接。实现方没有链接概念(对象存储)时一律保持 false。
     /// </para>
-    /// <para>可用版本:TBD(发版时替换);老宿主 / 老插件给出的条目恒为 false。</para>
+    /// <para>可用版本:2.1.3;老宿主 / 老插件给出的条目恒为 false。</para>
     /// </summary>
     public bool IsSymbolicLink { get; init; }
 
@@ -46,7 +46,7 @@ public sealed record RemoteFileEntry(
     /// 链接的<b>原始</b>目标文本(readlink 的结果,可能是相对路径,相对链接所在目录解析,与 <c>ln -s</c> 一致)。
     /// 非链接、或后端给不出目标时为 <see langword="null" />。只用于展示与复制链接,
     /// 不要拿它自行拼路径去访问 —— 要访问目标直接用条目的 <see cref="FullPath" />(服务器负责跟随)。
-    /// <para>可用版本:TBD(发版时替换)。</para>
+    /// <para>可用版本:2.1.3。</para>
     /// </summary>
     public string? LinkTarget { get; init; }
 }
@@ -92,7 +92,7 @@ public interface IRemoteFsApi
     /// </remarks>
     /// <exception cref="PluginTransferRejectedException">
     /// 登记之前就被宿主明确拒绝(源被占用、已删除、额度满、本机空间不足):什么都没开始、回执未登记,
-    /// 与「结果未知」「用户拒绝」处置不同,见该类型说明。可用版本:TBD(发版时替换)。
+    /// 与「结果未知」「用户拒绝」处置不同,见该类型说明。可用版本:2.1.3。
     /// </exception>
     Task<RemoteTransferSnapshot> StartUploadAsync(string sessionId, string localPath, string remotePath,
         RemoteUploadOptions options, CancellationToken cancellationToken = default)
@@ -109,7 +109,7 @@ public interface IRemoteFsApi
     /// 与活动任务失效并请求取消,提交前重新校验。默认 Overwrite=false 必须使用宿主临时文件和原子无替换提交,
     /// 不能只做预先存在性检查或先删除目标。无支持时明确抛 NotSupportedException,不退回 DownloadFileAsync。
     /// </remarks>
-    /// <exception cref="PluginTransferRejectedException">登记之前就被宿主明确拒绝,见该类型说明。可用版本:TBD(发版时替换)。</exception>
+    /// <exception cref="PluginTransferRejectedException">登记之前就被宿主明确拒绝,见该类型说明。可用版本:2.1.3。</exception>
     Task<RemoteTransferSnapshot> StartDownloadAsync(string sessionId, string remotePath, string localPath,
         RemoteDownloadOptions options, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("This host does not implement download transfer operations.");

@@ -215,7 +215,7 @@ public static class PluginRpc
     /// <summary>
     /// 往消息中心发一条消息(插件 → 宿主请求,载荷 <see cref="UiNotifyRequest" />,应答 <see cref="UiNotifyResponse" />)。
     /// 发送方插件身份由连接绑定;握手未宣告 <see cref="HandshakeResponse.SupportsNotifications" /> 时 PluginHost 不发这条。
-    /// 可用版本:TBD(发版时替换)。
+    /// 可用版本:2.1.3。
     /// </summary>
     public const string UiNotify = "ui/notify";
 
@@ -286,7 +286,7 @@ public sealed record HandshakeResponse(int ApiLevel, string HostVersion, string 
     /// <summary>支持独立下载任务;缺席即不支持,不可回退长 RPC。</summary>
     public bool SupportsDownloadOperations { get; init; }
 
-    /// <summary>支持 <see cref="PluginRpc.UiNotify" />(插件往消息中心发消息);缺席即旧宿主,不支持。可用版本:TBD(发版时替换)。</summary>
+    /// <summary>支持 <see cref="PluginRpc.UiNotify" />(插件往消息中心发消息);缺席即旧宿主,不支持。可用版本:2.1.3。</summary>
     public bool SupportsNotifications { get; init; }
 }
 

@@ -160,7 +160,7 @@ public interface IUiApi
     /// <summary>
     /// 宿主是否实现了 <see cref="PostNotificationAsync" />;旧宿主默认 <see langword="false" />。
     /// 为 false 时不要退回别的打扰渠道(弹窗、开面板)去补 —— 发不了就只写日志。
-    /// <para>可用版本:TBD(发版时替换)。</para>
+    /// <para>可用版本:2.1.3。</para>
     /// </summary>
     bool SupportsNotifications => false;
 
@@ -188,7 +188,7 @@ public interface IUiApi
     /// 这不是操作系统通知(那是另一项权限 <c>notifications.system</c>,本方法不涉及)。
     /// 任意线程可调;令牌只取消这一次请求,不撤回已经入列的消息。
     /// </para>
-    /// <para>可用版本:TBD(发版时替换)。隔离进程经 <c>ui/notify</c> 转发,握手未宣告支持时在插件进程内直接抛不支持。</para>
+    /// <para>可用版本:2.1.3。隔离进程经 <c>ui/notify</c> 转发,握手未宣告支持时在插件进程内直接抛不支持。</para>
     /// </summary>
     /// <param name="notification">要发的消息。</param>
     /// <param name="cancellationToken">取消令牌。</param>

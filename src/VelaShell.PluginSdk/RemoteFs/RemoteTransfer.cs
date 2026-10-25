@@ -27,7 +27,7 @@ public enum RemoteTransferPhase
 /// <summary>
 /// 宿主在<b>登记任务之前</b>拒绝启动的原因,见 <see cref="PluginTransferRejectedException" />。
 /// 数值显式给出并且<b>只增不改</b>;线上按短横线名传(<c>source-in-use</c> 一类),不认识的名字读成 <see cref="Unknown" />。
-/// <para>可用版本:TBD(发版时替换)。</para>
+/// <para>可用版本:2.1.3。</para>
 /// </summary>
 public enum RemoteTransferRejectReason
 {

@@ -26,7 +26,7 @@ namespace VelaShell.PluginSdk.Protocols;
 ///   <item>与 <see cref="IProtocolFileSystem" /> 的其余方法一样可能被并发调用,且在后台线程上调用。</item>
 /// </list>
 /// </para>
-/// <para>可用版本:TBD(发版时替换)。只增不改,<c>apiLevel</c> 不变。</para>
+/// <para>可用版本:2.1.3。只增不改,<c>apiLevel</c> 不变。</para>
 /// </summary>
 public interface IProtocolLastWriteTime
 {

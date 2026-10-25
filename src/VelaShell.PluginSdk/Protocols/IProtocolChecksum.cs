@@ -28,7 +28,7 @@ namespace VelaShell.PluginSdk.Protocols;
 ///   一次请求可能带上百个路径,能批量就批量。</item>
 /// </list>
 /// </para>
-/// <para>可用版本:TBD(发版时替换)。只增不改,<c>apiLevel</c> 不变。</para>
+/// <para>可用版本:2.1.3。只增不改,<c>apiLevel</c> 不变。</para>
 /// </summary>
 public interface IProtocolChecksum
 {
