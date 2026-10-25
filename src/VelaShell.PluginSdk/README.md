@@ -14,6 +14,7 @@
 | `Commands/` `Ui/` `Clipboard/` | 宿主侧能力：命令注册、面板/对话框与消息中心通知（`PluginNotification`）、剪贴板。 |
 | `Storage/` `Secrets/` `TimeSeries/` | 持久化能力：KV 存储、加密机密、时序数据（含 `TimeSeriesModel` 与写入校验）。 |
 | `Logging/` `Events/` | 插件日志与宿主事件订阅。 |
+| `Versioning/` | `SemanticVersion`：宿主、`vela-plugin` 与插件商店共用的版本解析与比较（SemVer 2.0 优先级；装载闸用只比数字段的 `CompareCoreTo`）。 |
 | `Manifest/` | `plugin.json` 的模型、读取器与错误类型（`PluginManifest`/`PluginManifestReader`/`PluginManifestException`）。 |
 | `Hosting/` | 装载侧工具：`PluginAssemblyLoadContext`（可收集 ALC，`Avalonia*` 前缀回落到装载方以保证类型同一）、`PluginEntryLocator`、`JsonFilePluginStorage`。 |
 | `Rpc/` | 隔离模式的线协议：`PluginRpc`（方法名常量与载荷记录）、`RpcConnection`、`RpcMessage`。 |
